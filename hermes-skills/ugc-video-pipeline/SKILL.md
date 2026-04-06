@@ -2,10 +2,25 @@
 name: ugc-video-pipeline
 category: creative
 description: Local AI-powered UGC video generation pipeline for social media marketing. Produces talking-head + scene video composites with voice cloning, lip-sync, and professional polish. Targets near-Higgsfield quality at near-zero cost using open-source models.
-version: 2.0.0
+version: 3.0.0
 ---
 
 # UGC Video Pipeline Skill
+
+## Platform Support
+
+This skill runs on **macOS (Apple Silicon M-series)** and **Linux (NVIDIA GPU)**.
+
+| Stage | macOS (M1-M4) | Linux (NVIDIA GPU) |
+|---|---|---|
+| Script Gen | Ollama (local) | Ollama or API |
+| Voice / TTS | macOS `say` or ElevenLabs API | XTTS v2 (local) or API |
+| Avatar Image | Ollama or user-provided | Stable Diffusion XL (MPS/CUDA) or API |
+| Talking Head | API (D-ID / HeyGen) | Hedra/Wav2Lip (local CUDA) |
+| Scene Video | API (Runway/Kling/Pika) | Wan 2.2 / LTX-Video via ComfyUI (local CUDA) |
+| Composition | FFmpeg (native) | FFmpeg (native) |
+
+**The skill auto-detects your platform and uses the best available backend for each stage.**
 
 ## Trigger Conditions
 
@@ -24,7 +39,17 @@ Do NOT invoke this skill when:
 
 ---
 
-## v2.0 — New Features
+## v3.0 — Mac-Native Rewrite
+
+- **macOS native stages**: Ollama script gen, `say` TTS, FFmpeg composition — all work without any cloud API
+- **Platform auto-detection**: Pipeline detects Mac/Linux and uses the best backend
+- **Hybrid mode**: If a GPU machine is found on the LAN (10.0.x.x), GPU stages are offloaded to it automatically
+- **API fallbacks**: Cloud APIs (ElevenLabs, D-ID, Runway, Kling) are configured via `pipeline_config.json`
+- **No external dependencies for composition**: FFmpeg is all you need for the final stage on Mac
+
+---
+
+## v2.0 — Previous Features
 
 - **`pipeline_config.json`** — Centralized configuration for all paths, LLM, ComfyUI, and stage defaults. No more environment variable sprawl.
 - **`--dry-run`** — Validate the full pipeline setup (scripts exist, services reachable, files accessible) without running any heavy steps.

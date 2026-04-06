@@ -1,6 +1,12 @@
 {
-  "_version": "1.0",
-  "_description": "Default configuration for the UGC Video Pipeline orchestrator",
+  "_version": "2.0",
+  "_description": "Default configuration for the UGC Video Pipeline orchestrator. Auto-detects platform (mac/linux) and uses best available backend per stage.",
+
+  "platform": {
+    "auto_detect": true,
+    "force": "mac",
+    "gpu_hosts": ["10.0.0.210", "10.0.0.223", "10.0.0.240"]
+  },
 
   "paths": {
     "skill_dir": "~/.hermes/skills/ugc-video-pipeline",
@@ -11,41 +17,101 @@
     "character_image": "",
     "luts_dir": "~/.hermes/skills/ugc-video-pipeline/luts",
     "workflows_dir": "~/.hermes/skills/ugc-video-pipeline/workflows",
-    "caption_style": "~/.hermes/skills/ugc-video-pipeline/caption_style.json"
+    "caption_style": "~/.hermes/skills/ugc-video-pipeline/caption_style.json",
+    "temp_dir": "/tmp/ugc-pipeline"
   },
 
   "llm": {
     "provider": "ollama",
-    "model": "llama3.1:70b",
+    "model": "llama3.2:1b",
+    "fallback_model": "llama3.1:8b",
     "endpoint": "http://localhost:11434/api/generate",
     "api_key_env": "",
-    "timeout_secs": 120
+    "timeout_secs": 120,
+    "ollama_host": "localhost"
+  },
+
+  "tts": {
+    "provider": "auto",
+    "mac_voice": "Samantha",
+    "mac_speech_rate": 0.52,
+    "elevenlabs": {
+      "api_key_env": "ELEVENLABS_API_KEY",
+      "voice_id": "",
+      "model": "eleven_v2"
+    },
+    "xtts": {
+      "enabled": true,
+      "device": "cuda"
+    }
+  },
+
+  "avatar": {
+    "provider": "auto",
+    "sd_model": "stabilityai/stable-diffusion-xl-base-1.0",
+    "prompt": "professional headshot photo of a friendly diverse person, frontal face, studio lighting, high quality portrait, photorealistic",
+    "steps": 25,
+    "guidance_scale": 7.5,
+    "resolution": [1024, 1024],
+    "dalle": {
+      "api_key_env": "OPENAI_API_KEY",
+      "size": "1024x1024"
+    }
+  },
+
+  "talking_head": {
+    "provider": "auto",
+    "backend": "auto",
+    "aspect_ratio": "9:16",
+    "hedra": {
+      "repo_dir": "~/models/hedra",
+      "model": "character-medium"
+    },
+    "wav2lip": {
+      "checkpoint": "~/models/wav2lip/wav2lip.pth"
+    },
+    "sadtalker": {
+      "checkpoint_dir": "~/models/sadtalker"
+    },
+    "d_id": {
+      "api_key_env": "DID_API_KEY",
+      "voice_id": ""
+    },
+    "heygen": {
+      "api_key_env": "HEYGEN_API_KEY",
+      "voice_id": ""
+    }
+  },
+
+  "scene_video": {
+    "provider": "auto",
+    "model": "wan22",
+    "duration": 5,
+    "resolution": [1280, 720],
+    "seed": 42,
+    "wan22": {
+      "checkpoint": "~/.cache/huggingface/hub/Wan2.2_T2V_A14B.safetensors"
+    },
+    "ltx": {
+      "checkpoint": "~/.cache/huggingface/hub/LTX-Video-13B.safetensors"
+    },
+    "runway": {
+      "api_key_env": "RUNWAY_API_KEY",
+      "model": "gen3a"
+    },
+    "kling": {
+      "api_key_env": "KLING_API_KEY",
+      "model": "kling-v1-5"
+    },
+    "pika": {
+      "api_key_env": "PIKA_API_KEY",
+      "model": "pika-2"
+    }
   },
 
   "comfyui": {
     "host": "http://localhost:8188",
     "timeout_secs": 600
-  },
-
-  "voice_clone": {
-    "enabled": true,
-    "language": "en"
-  },
-
-  "talking_head": {
-    "enabled": true,
-    "backend": "auto",
-    "aspect_ratio": "9:16",
-    "avatar_prompt": "professional headshot photo of a friendly diverse person, frontal face, studio lighting, high quality portrait",
-    "avatar_model": "sd-xl"
-  },
-
-  "scene_video": {
-    "enabled": true,
-    "model": "wan22",
-    "duration": 5,
-    "resolution": [1280, 720],
-    "seed": 42
   },
 
   "compose": {

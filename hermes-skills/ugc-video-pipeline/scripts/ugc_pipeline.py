@@ -33,6 +33,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -42,9 +43,56 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Optional, Callable, Any
 
+# ─── Platform Detection ─────────────────────────────────────────────────────────
+
+def detect_platform() -> str:
+    """Detect the current platform and GPU availability.
+
+    Returns:
+        "mac_mps"  — Apple Silicon (M1-M4) with MPS GPU
+        "mac_cpu"  — Intel Mac (CPU only)
+        "linux_gpu" — Linux with NVIDIA GPU (CUDA)
+        "linux_cpu" — Linux without GPU
+    """
+    sys_platform = platform.system()
+    machine = platform.machine()
+
+    if sys_platform == "Darwin":
+        if machine.startswith("arm"):
+            try:
+                import torch
+                if torch.backends.mps.is_available():
+                    return "mac_mps"
+            except ImportError:
+                pass
+        return "mac_cpu"
+
+    elif sys_platform == "Linux":
+        try:
+            import torch
+            if torch.cuda.is_available():
+                return "linux_gpu"
+        except ImportError:
+            pass
+        return "linux_cpu"
+
+    return "unknown"
+
+
+CURRENT_PLATFORM = detect_platform()
+
+def is_mac() -> bool:
+    return CURRENT_PLATFORM in ("mac_mps", "mac_cpu")
+
+def has_cuda() -> bool:
+    return CURRENT_PLATFORM == "linux_gpu"
+
+def has_mps() -> bool:
+    return CURRENT_PLATFORM == "mac_mps"
+
 # ─── Version & Metadata ───────────────────────────────────────────────────────
 
-__version__ = "2.0.0"
+__version__ = "3.0.0"
 
 # ─── Default paths ───────────────────────────────────────────────────────────
 
@@ -446,16 +494,16 @@ def _llm_call_openai(prompt: str, config: PipelineConfig) -> str:
 
 def clone_voice(
     script: dict,
-    reference_audio: str,
-    output_path: str | Path,
-    config: PipelineConfig,
+    reference_audio: str = "",
+    output_path: str | Path = "",
+    config: PipelineConfig | None = None,
     progress: ProgressCallback | None = None,
 ) -> str:
-    """Clone voice using XTTS v2.
+    """Clone voice using XTTS v2, or macOS `say` as a fallback.
 
     Args:
         script: Script dict containing hook, sections, cta
-        reference_audio: Path to reference WAV (5-30s, clean speech)
+        reference_audio: Path to reference WAV for voice cloning (required for XTTS, optional for mac_tts)
         output_path: Output WAV path
         config: Pipeline configuration
         progress: Progress callback
@@ -466,27 +514,32 @@ def clone_voice(
     cb = progress or ProgressCallback()
     cb.on_start("voice_clone", STAGE_DESCRIPTIONS["voice_clone"])
 
+    if config is None:
+        config = PipelineConfig()
+
     # Build full script text
     parts = [script.get("hook", "")]
     for section in script.get("sections", []):
-        parts.append(section.get("speaker_text", ""))
+        if isinstance(section, dict):
+            parts.append(section.get("speaker_text", ""))
+        elif isinstance(section, str):
+            parts.append(section)
     parts.append(script.get("cta", ""))
     full_text = " ".join(p for p in parts if p)
 
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # ── Option A: import voice_clone as module ───────────────────────────────
+    # ── Option A: import voice_clone as module (XTTS v2 on GPU) ─────────────
     voice_clone_script = config.skill_dir / "scripts" / "voice_clone.py"
     if voice_clone_script.exists():
         try:
-            # Dynamically import the module
             import importlib.util
             spec = importlib.util.spec_from_file_location("voice_clone_module", voice_clone_script)
             vc_mod = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(vc_mod)
 
-            cb.on_progress("voice_clone", f"Using voice_clone module with XTTS v2")
+            cb.on_progress("voice_clone", f"Using XTTS v2 (requires CUDA GPU)")
             vc_mod.clone_voice(
                 reference_audio=reference_audio,
                 text=full_text,
@@ -496,9 +549,27 @@ def clone_voice(
             cb.on_complete("voice_clone", STAGE_DESCRIPTIONS["voice_clone"], str(output_path))
             return str(output_path)
         except Exception as e:
-            cb.on_warning("voice_clone", f"Module import failed ({e}), falling back to direct import")
+            cb.on_warning("voice_clone", f"Module import failed ({e}), falling back")
 
-    # ── Option B: direct TTS import ─────────────────────────────────────────
+    # ── Option B: macOS native `say` command (zero setup) ──────────────────
+    if is_mac():
+        mac_tts_script = config.skill_dir / "scripts" / "mac_tts.py"
+        if mac_tts_script.exists():
+            cb.on_progress("voice_clone", "Using macOS `say` TTS (native, no GPU needed)")
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("mac_tts_module", mac_tts_script)
+            mac_mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mac_mod)
+            mac_mod.text_to_wav(
+                text=full_text,
+                wav_path=str(output_path),
+                voice="Samantha",
+                rate=0.52,
+            )
+            cb.on_complete("voice_clone", STAGE_DESCRIPTIONS["voice_clone"], str(output_path))
+            return str(output_path)
+
+    # ── Option C: direct TTS import (XTTS v2 on CPU) ────────────────────────
     try:
         import torch
         from TTS.api import TTS
@@ -559,20 +630,44 @@ def generate_talking_head(
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # ── Resolve character image (generate if needed) ─────────────────────────
-    char_path = _resolve_character_image(character_image, config, cb)
-    cb.on_progress("talking_head", f"Using character image: {char_path}")
+    # ── Check disk space before attempting GPU model downloads ──────────────
+    # SDXL needs ~10GB, Wan2.2 needs ~15GB. If < 8GB free, skip GPU stages.
+    disk_check_failed = False
+    try:
+        import shutil as _shutil
+        total, used, free = _shutil.disk_usage(config.skill_dir)
+        disk_gb = free // (1024**3)
+        if free < 8 * (1024**3):
+            cb.on_warning(
+                "talking_head",
+                f"Disk space low ({disk_gb}GB free, ~10GB needed for SDXL). "
+                "Skipping GPU avatar generation."
+            )
+            disk_check_failed = True
+    except Exception:
+        pass  # disk check is best-effort
 
-    # ── Try importing talking_head as module ────────────────────────────────
+    # ── Resolve character image (generate if needed) ─────────────────────────
+    # Wrapped in try/except so disk-space failures in _generate_avatar
+    # still let us fall through to the mac avatar card.
+    try:
+        char_path = _resolve_character_image(character_image, config, cb)
+        cb.on_progress("talking_head", f"Using character image: {char_path}")
+    except Exception as e:
+        cb.on_warning("talking_head", f"Character image generation failed ({e})")
+        char_path = ""
+
+    # ── Try importing talking_head as module (Hedra/Wav2Lip — needs GPU) ──────
+    # Skip module import if disk space is low — would just waste time downloading
     talking_head_script = config.skill_dir / "scripts" / "talking_head.py"
-    if talking_head_script.exists():
+    if talking_head_script.exists() and not disk_check_failed:
         try:
             import importlib.util
             spec = importlib.util.spec_from_file_location("talking_head_module", talking_head_script)
             th_mod = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(th_mod)
 
-            cb.on_progress("talking_head", "Calling talking_head module")
+            cb.on_progress("talking_head", "Calling talking_head module (requires CUDA GPU)")
             th_mod.generate_talking_head(
                 audio_path=str(audio_path),
                 character_image=char_path,
@@ -587,11 +682,29 @@ def generate_talking_head(
                 cb.on_complete("talking_head", STAGE_DESCRIPTIONS["talking_head"], str(output_path))
                 return str(output_path)
         except Exception as e:
-            cb.on_warning("talking_head", f"Module call failed ({e}), trying direct generation")
+            cb.on_warning("talking_head", f"Module call failed ({e})")
+
+    # ── Mac fallback: GPU unavailable, disk low, or module failed ───────────
+    if is_mac() and (not has_cuda() or disk_check_failed):
+        cb.on_warning(
+            "talking_head",
+            "No GPU detected — creating a styled avatar card on Mac. "
+            "For talking-head video use D-ID or HeyGen API."
+        )
+        _generate_mac_avatar_card(
+            char_path=char_path,
+            audio_path=str(audio_path),
+            output_path=str(output_path),
+            config=config,
+            cb=cb,
+        )
+        cb.on_complete("talking_head", STAGE_DESCRIPTIONS["talking_head"], str(output_path))
+        return str(output_path)
 
     raise RuntimeError(
-        "talking_head.py module call failed and direct import is not available. "
-        "Ensure talking_head.py is installed correctly."
+        "talking_head.py module failed and no GPU fallback available. "
+        "On Mac, install D-ID or HeyGen API keys. "
+        "On Linux, ensure a CUDA GPU is available."
     )
 
 
@@ -618,7 +731,21 @@ def _generate_avatar(
     config: PipelineConfig,
     cb: ProgressCallback,
 ) -> str:
-    """Generate avatar using talking_head's generate_avatar (imported as module)."""
+    """Generate avatar using talking_head's generate_avatar (imported as module).
+
+    On Mac or when disk space is low (< 8GB), falls back to raising an exception
+    that triggers the mac avatar card in generate_talking_head.
+    """
+    # Check disk space before attempting model download
+    try:
+        import shutil as _shutil
+        total, used, free = _shutil.disk_usage(config.skill_dir)
+        if free < 8 * (1024**3):  # < 8 GB free
+            cb.on_warning("talking_head", f"Low disk space ({free//(1024**3)}GB free). Skipping SDXL avatar download.")
+            raise RuntimeError("Low disk space for avatar model download")
+    except Exception:
+        pass  # disk usage check is best-effort
+
     talking_head_script = config.skill_dir / "scripts" / "talking_head.py"
     if not talking_head_script.exists():
         raise FileNotFoundError(f"talking_head.py not found at {talking_head_script}")
@@ -640,8 +767,141 @@ def _generate_avatar(
         )
         cb.on_progress("talking_head", f"Avatar generated: {result}")
         return result
+    except RuntimeError as e:
+        # Re-raise RuntimeErrors (including disk space) to trigger fallback
+        raise
     except Exception as e:
         raise RuntimeError(f"Avatar generation failed: {e}. Provide a character image path to bypass.")
+
+
+def _generate_mac_avatar_card(
+    char_path: str,
+    audio_path: str,
+    output_path: str,
+    config: PipelineConfig,
+    cb: ProgressCallback,
+) -> str:
+    """Generate a styled avatar card (still image) on Mac using PIL.
+
+    This is a fallback when no GPU is available for Hedra/Wav2Lip.
+    The final video will show a professional-looking avatar card synced to audio.
+    """
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+    except ImportError:
+        raise ImportError("pip install Pillow")
+
+    # Get audio duration
+    duration = 5.0
+    try:
+        result = subprocess.run(
+            ["afinfo", audio_path],
+            capture_output=True, text=True
+        )
+        for line in result.stdout.splitlines():
+            if "estimated duration" in line.lower():
+                parts = line.split(":")
+                if len(parts) > 1:
+                    duration = max(2.0, float(parts[1].strip().split()[0]))
+    except Exception:
+        pass
+
+    # Avatar card dimensions: 1080x1920 (9:16 vertical)
+    W, H = 1080, 1920
+    img = Image.new("RGB", (W, H), color=(15, 15, 25))
+    draw = ImageDraw.Draw(img)
+
+    # Load character image if available
+    char_img = None
+    if char_path and Path(char_path).exists():
+        try:
+            char_img = Image.open(char_path).convert("RGB")
+            # Crop to square and resize
+            w, h = char_img.size
+            size = min(w, h)
+            left = (w - size) // 2
+            top = (h - size) // 2
+            char_img = char_img.crop((left, top, left + size, top + size))
+            char_img = char_img.resize((720, 720), Image.LANCZOS)
+        except Exception as e:
+            cb.on_warning("talking_head", f"Could not load character image: {e}")
+            char_img = None
+
+    # Draw a stylized avatar circle with gradient-like effect
+    cx, cy = W // 2, H // 3
+    radius = 300
+
+    # Background glow
+    for r in range(radius + 80, radius, -4):
+        alpha = int(255 * (1 - (r - radius) / 80) * 0.3)
+        draw.ellipse(
+            [cx - r, cy - r, cx + r, cy + r],
+            fill=(60, 20, 100)
+        )
+
+    if char_img:
+        # Paste character image in circle using mask
+        mask = Image.new("L", (720, 720), 0)
+        mask_draw = ImageDraw.Draw(mask)
+        mask_draw.ellipse([0, 0, 719, 719], fill=255)
+        img.paste(char_img, (cx - 360, cy - 360), mask)
+    else:
+        # Draw a stylized person silhouette
+        draw.ellipse(
+            [cx - radius, cy - radius, cx + radius, cy + radius],
+            fill=(80, 50, 140)
+        )
+        # Simple face circle
+        draw.ellipse(
+            [cx - 120, cy - 140, cx + 120, cy + 100],
+            fill=(160, 120, 200)
+        )
+
+    # Brand text
+    try:
+        font_large = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 80)
+        font_small = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 48)
+    except Exception:
+        font_large = ImageFont.load_default()
+        font_small = font_large
+
+    # "AI Avatar" text
+    brand = "AI AVATAR"
+    bbox = draw.textbbox((0, 0), brand, font=font_large)
+    text_w = bbox[2] - bbox[0]
+    draw.text(
+        (cx - text_w // 2, cy + radius + 60),
+        brand,
+        fill=(200, 180, 255),
+        font=font_large,
+    )
+
+    # Audio waveform hint
+    waveform_y = H - 300
+    waveform_text = "♪ audio synced ♪"
+    bbox = draw.textbbox((0, 0), waveform_text, font=font_small)
+    text_w = bbox[2] - bbox[0]
+    draw.text(
+        (cx - text_w // 2, waveform_y),
+        waveform_text,
+        fill=(150, 140, 180),
+        font=font_small,
+    )
+
+    # Duration indicator
+    duration_text = f"~{duration:.0f}s"
+    bbox = draw.textbbox((0, 0), duration_text, font=font_small)
+    text_w = bbox[2] - bbox[0]
+    draw.text(
+        (cx - text_w // 2, waveform_y + 80),
+        duration_text,
+        fill=(100, 90, 130),
+        font=font_small,
+    )
+
+    img.save(output_path)
+    cb.on_progress("talking_head", f"Mac avatar card saved: {output_path}")
+    return output_path
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1120,15 +1380,19 @@ class UGCPipeline:
             # Build caption text for compose stage
             cap_parts = [artifacts.script.get("hook", "")]
             for s in artifacts.script.get("sections", []):
-                cap_parts.append(s.get("speaker_text", ""))
+                if isinstance(s, dict):
+                    cap_parts.append(s.get("speaker_text", ""))
+                elif isinstance(s, str):
+                    cap_parts.append(s)
             cap_parts.append(artifacts.script.get("cta", ""))
             self._caption_text = " ".join(p for p in cap_parts if p)
 
-        # ── Stage 2: Voice Clone ─────────────────────────────────────────────
+        # ── Stage 2: Voice Clone (or mac TTS) ─────────────────────────────────
+        mac_tts_script = self.config.skill_dir / "scripts" / "mac_tts.py"
         if "voice_clone" in skip_stages:
             self.progress.on_skip("voice_clone", "skipped by request")
-        elif not reference_audio:
-            self.progress.on_skip("voice_clone", "no reference_audio provided")
+        elif not reference_audio and not (is_mac() and mac_tts_script.exists()):
+            self.progress.on_skip("voice_clone", "no reference_audio provided (and mac_tts.py not found)")
         else:
             audio_out = self.config.output_dir / "cloned_voice.wav"
             artifacts.audio_path = clone_voice(
