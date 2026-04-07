@@ -1,0 +1,28 @@
+{
+  "id": "proposed_terminal_timeouterror_3",
+  "name": "terminal \u2014 TimeoutError Skill",
+  "version": "1.0.0",
+  "description": "Handles TimeoutError errors in terminal. Generated from 3 occurrences across 2 sessions.",
+  "triggerPhrases": [
+    "terminal error",
+    "terminal failed",
+    "terminal issue",
+    "timeouterror error",
+    "error: timeouterror",
+    "error: Command timed out after 30 sec",
+    "Command timed out after 30 sec",
+    "something went wrong",
+    "operation failed",
+    "task failed"
+  ],
+  "confidence": 0.8,
+  "deployedAt": "2026-04-07T15:16:49.779599+00:00",
+  "source": {
+    "tool_name": "terminal",
+    "error_type": "TimeoutError",
+    "message_prefix": "Command timed out after 30 seconds: curl https://a",
+    "frequency": 3,
+    "severity": "HIGH",
+    "session_count": 2
+  }
+}

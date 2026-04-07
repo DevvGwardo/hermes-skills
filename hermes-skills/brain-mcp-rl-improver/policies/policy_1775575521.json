@@ -1,0 +1,50 @@
+{
+  "timestamp": 1775575521.676666,
+  "training_mode": "analysis_only",
+  "timesteps_requested": 1000,
+  "trajectories_used": 740,
+  "model_base": "gpt2",
+  "status": "completed_analysis",
+  "analysis": {
+    "action_distribution": {
+      "monitor": 740
+    },
+    "average_reward": 0.0,
+    "mcp_status_distribution": {
+      "status_check_failed": 740
+    },
+    "sample_trajectory": {
+      "state": {
+        "timestamp": "2026-04-05T13:06:29.820461",
+        "load_avg": [
+          4.70751953125,
+          5.01416015625,
+          4.81591796875
+        ],
+        "active_agents": 0,
+        "queue_depth": 0,
+        "mcp_status": "status_check_failed"
+      },
+      "action": {
+        "type": "monitor",
+        "details": {
+          "sample_interval": 30,
+          "trigger": "periodic_check"
+        }
+      },
+      "reward": 0.0,
+      "next_state": {
+        "timestamp": "2026-04-05T13:06:59.844640",
+        "load_avg": [
+          4.3271484375,
+          4.8857421875,
+          4.77490234375
+        ],
+        "active_agents": 0,
+        "queue_depth": 0,
+        "mcp_status": "status_check_failed"
+      },
+      "timestamp": "2026-04-05T13:06:59.888724"
+    }
+  }
+}

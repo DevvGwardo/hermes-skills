@@ -8,19 +8,23 @@ import json
 import argparse
 import os
 import sys
+import time
 from pathlib import Path
 import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM
-from trl import PPOTrainer, PPOConfig, AutoModelForCausalLMWithValueHead
-from datasets import Dataset
 import numpy as np
+
+# Optional imports - wrapped in try/except for graceful degradation
+# Note: We defer actual import to main() to properly handle RuntimeError from nested imports
+TRL_AVAILABLE = None  # Will be set to True/False in main()
 
 def load_trajectories(data_dir):
     """Load trajectory data from JSON files."""
     data_dir = Path(data_dir)
     trajectories = []
     
-    for traj_file in data_dir.glob("trajectories_*.json"):
+    for traj_file in sorted(list(data_dir.glob("trajectories_*.json")) +
+                            list((data_dir.parent / "trajectories").glob("trajectories_*.json")
+                                 if (data_dir.parent / "trajectories").exists() else [])):
         try:
             with open(traj_file, 'r') as f:
                 data = json.load(f)
@@ -64,6 +68,18 @@ def main():
     output_dir = Path(os.path.expanduser(args.output_dir))
     output_dir.mkdir(parents=True, exist_ok=True)
     
+    # Check TRL availability - must be done after argparse but before training logic
+    global TRL_AVAILABLE
+    if TRL_AVAILABLE is None:
+        try:
+            from transformers import AutoTokenizer, AutoModelForCausalLM
+            from trl import PPOTrainer, PPOConfig, AutoModelForCausalLMWithValueHead
+            from datasets import Dataset
+            TRL_AVAILABLE = True
+        except Exception as e:
+            print(f"TRL dependencies not fully available ({type(e).__name__}: {e}). Using analysis mode.")
+            TRL_AVAILABLE = False
+    
     print(f"Loading trajectories from {data_dir}")
     trajectories = load_trajectories(data_dir)
     
@@ -75,6 +91,55 @@ def main():
     
     # Preprocess trajectories for training
     processed_data = [preprocess_trajectory(t) for t in trajectories]
+    
+    # Fallback mode: analyze trajectory patterns and create policy insights
+    if not TRL_AVAILABLE:
+        print("TRL not available - running in analysis mode")
+        
+        # Analyze trajectory patterns
+        action_counts = {}
+        reward_sum = 0.0
+        reward_count = 0
+        mcp_statuses = {}
+        
+        for traj in trajectories:
+            action_type = traj.get("action", {}).get("type", "unknown")
+            action_counts[action_type] = action_counts.get(action_type, 0) + 1
+            
+            reward = traj.get("reward", 0.0)
+            if reward != 0.0:
+                reward_sum += reward
+                reward_count += 1
+            
+            mcp_status = traj.get("state", {}).get("mcp_status", "unknown")
+            mcp_statuses[mcp_status] = mcp_statuses.get(mcp_status, 0) + 1
+        
+        avg_reward = reward_sum / reward_count if reward_count > 0 else 0.0
+        
+        # Create policy file with analysis
+        policy_file = output_dir / f"policy_{int(time.time())}.json"
+        policy_data = {
+            "timestamp": time.time(),
+            "training_mode": "analysis_only",
+            "timesteps_requested": args.timesteps,
+            "trajectories_used": len(trajectories),
+            "model_base": args.model_name,
+            "status": "completed_analysis",
+            "analysis": {
+                "action_distribution": action_counts,
+                "average_reward": avg_reward,
+                "mcp_status_distribution": mcp_statuses,
+                "sample_trajectory": trajectories[0] if trajectories else None
+            }
+        }
+        
+        with open(policy_file, 'w') as f:
+            json.dump(policy_data, f, indent=2)
+        print(f"Policy analysis saved to {policy_file}")
+        return 0
+    
+    # Full TRL training mode
+    from datasets import Dataset
     dataset = Dataset.from_dict({"text": processed_data})
     
     # For demonstration, we'll create a simple reward model
@@ -97,6 +162,9 @@ def main():
     print("Setting up PPO training...")
     # This is a simplified setup - real implementation would be more complex
     try:
+        from transformers import AutoTokenizer
+        from trl import PPOTrainer, PPOConfig, AutoModelForCausalLMWithValueHead
+        
         # Load base model
         model = AutoModelForCausalLMWithValueHead.from_pretrained(args.model_name)
         tokenizer = AutoTokenizer.from_pretrained(args.model_name)
@@ -156,7 +224,7 @@ def main():
                 print(f"Epoch {epoch}, stats: {stats}")
         
         # Save trained policy
-        policy_path = output_dir / f"policy_{int(torch.time.time())}"
+        policy_path = output_dir / f"policy_{int(time.time())}"
         ppo_trainer.save_pretrained(str(policy_path))
         tokenizer.save_pretrained(str(policy_path))
         
@@ -167,7 +235,7 @@ def main():
         # Fallback: create a simple policy file
         policy_file = output_dir / f"simple_policy_{int(time.time())}.json"
         policy_data = {
-            "timestamp": torch.time.time(),
+            "timestamp": time.time(),
             "timesteps": args.timesteps,
             "trajectories_used": len(trajectories),
             "model_base": args.model_name,
