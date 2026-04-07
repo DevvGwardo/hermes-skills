@@ -307,6 +307,32 @@ mcp_brain_brain_release resource="src/api.ts"
 - Always dry_run gate before running with notifications
 - The architect should run first, then post its output so subsequent agents can read it
 
+## Ghost Sessions — Status Display Can Lie
+
+When spawning headless agents via `brain_wake`, the named session entry stays at "queued" with "spawn queued; waiting for first heartbeat" even after the actual process starts working. The real agent gets a separate `session-XXXXX` entry that shows "working".
+
+**Symptom:** `brain_agents` shows your named agents as "queued" or "stale" but work is actually happening under anonymous session IDs.
+
+**Diagnosis:** Check the agent log files directly:
+```python
+# Log path is returned by brain_wake, or find them:
+import glob
+logs = glob.glob("/tmp/brain-agent-*.log")  # or /var/folders/... on macOS
+```
+
+**Implication:** Don't trust "queued" status for headless agents. Cross-reference with `brain_read` for posted results and check logs. This is a pre-registration gap — the session is registered before the process confirms it started.
+
+## Using brain_wait_until for Synchronization
+
+For "wait for N agents to finish" scenarios, `brain_wait_until` works as a barrier but agents must explicitly call it. For passive monitoring, polling `brain_agents` + `brain_read` every 30-60s is more reliable. If results are slow to appear, check log files — agents may be reading large files before posting.
+
+## Recording Metrics
+
+After agents complete, record outcomes with `brain_metric_record` for future model routing decisions:
+```text
+brain_metric_record agent_name="..." task_description="..." outcome="success" duration_seconds=N
+```
+
 ## Stale Context Recovery (critical)
 
 When restoring a brain-context from a previous session, check the journal first:

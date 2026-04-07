@@ -176,6 +176,34 @@ ps aux | grep brain-mcp | grep -v grep
 
 **Key Insight:** `npm rebuild` often pulls prebuilt binaries that match the latest Node rather than compiling for your current version. Forcing source build with `npm_config_build_from_source=true` ensures native module compatibility. Additionally, running processes must be restarted to release the old binary from memory.
 
+**nvm PATH Gotcha (common on macOS):** When hermes spawns brain-mcp via nvm's Node (e.g. v22) but your default `node` is a different version (e.g. Homebrew v24), `npm rebuild` silently uses the *wrong* node and the module stays incompatible. The rebuild "succeeds" but nothing changes.
+
+Diagnosis — run both and compare:
+```bash
+node -e "console.log(process.versions.modules)"          # default node (e.g. 137 = v24)
+# vs what hermes actually uses:
+hermes mcp test brain 2>&1 | grep "Node.js"
+# prints: "Node.js v22.22.1" — note the MODULE_VERSION in the error too (127 = v22)
+```
+
+Fix — rebuild with the correct node on PATH:
+```bash
+export PATH="$HOME/.nvm/versions/node/v22.22.1/bin:$PATH"   # match hermes's node
+cd ~/brain-mcp && npm rebuild better-sqlite3
+hermes mcp test brain   # verify: should show ✓ Connected
+```
+
+If unsure which node version hermes uses, check the MCP transport config:
+```bash
+grep -A 5 "brain" ~/.hermes/config.yaml | grep node
+# or look at hermes mcp test brain output — it prints "Transport: stdio → /path/to/node"
+```
+
+**Root cause check list:**
+1. `hermes mcp test brain` → note the Node.js version and MODULE_VERSION in the error
+2. `node --version` and `node -e "console.log(process.versions.modules)"` → compare
+3. If mismatch: find hermes's node (`which node` inside nvm path), prepend to PATH, rebuild
+
 ### 5. Supplemental: Check Heartbeat History
 Review historical context from the brain heartbeat monitoring system:
 ```bash

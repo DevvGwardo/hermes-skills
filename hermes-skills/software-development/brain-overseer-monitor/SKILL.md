@@ -117,3 +117,4 @@ Successful overseer execution produces log entries like:
 - Stale heartbeat with "OK" last_status often indicates the heartbeat mechanism is partially functional but not updating frequently enough
 - Always correlate overseer findings with direct MCP tool checks when available for complete health picture
 - This skill complements the brain-heartbeat-check skill by adding time-series monitoring capability
+- **Caveat: HEARTBEAT_FRESH can be misleading.** The overseer checks if the heartbeat log file was *written to* recently, not whether the MCP connection succeeded. If the heartbeat script runs but its probe fails (e.g. native module crash), the overseer will report HEARTBEAT_FRESH while every heartbeat attempt is actually HEARTBEAT_FAIL. Always cross-check: `tail ~/.hermes/brain_heartbeat.log` for recent OK/FAIL entries, and `cat ~/.hermes/brain_heartbeat.status` for the actual status.
