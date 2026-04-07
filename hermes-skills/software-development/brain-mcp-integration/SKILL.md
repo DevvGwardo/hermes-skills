@@ -16,37 +16,137 @@ Systematic method for replacing simulated agent execution or stubbed functions i
 - When integrating brain MCP capabilities into orchestration systems like OpenClaw Evo
 
 ## Preparation
-- Ensure brain MCP system is operational (test with `brain_status`, `brain_agents`)
-- Identify the target function/stub to replace
-- Understand the expected input/output interface
-- Have a clear task description for what the agent should accomplish
-- Verify you can spawn agents successfully with `brain_wake`
+- Ensure brain MCP is operational: `mcp_brain_brain_status` returns room info
+- Identify target function/stub to replace
+- Understand expected input/output interface
+- Verify spawn works: `mcp_brain_brain_wake --task "test" --name "test-verify" --layout headless`
 
 ## Steps
 
 ### 1. System Verification
 ```text
-# Verify brain MCP is healthy
-mcp_brain_brain_status
-mcp_brain_brain_agents
-
-# Test basic functionality
-mcp_brain_brain_checkpoint   # Save test checkpoint
-mcp_brain_brain_gate --notify false --dry_run true  # Dry run gate check
+mcp_brain_brain_status          # Room info, session count
+mcp_brain_brain_agents         # Active agents with status
+mcp_brain_brain_checkpoint     # Save test checkpoint before starting
+mcp_brain_brain_gate --dry_run true  # Check integration without notifying agents
 ```
 
 ### 2. Target Analysis
-- Locate the simulated/stubbed function (look for comments like "Placeholder", "Simulate", "Fake")
-- Document the exact function signature and return type
-- Identify what inputs are available (context, model, task description, etc.)
-- Determine what the real agent should actually do instead of the simulation
+- Locate simulated/stubbed function (search for "Placeholder", "Simulate", "Fake", `setTimeout`)
+- Document exact function signature and return type
+- Identify available inputs (context, model, task description)
+- Determine what real agent should do instead
 
 ### 3. Agent Design
-- Define what specific task the brain agent should perform
-- Determine appropriate model complexity (haiku for simple, sonnet/opus for complex)
-- Choose layout (headless for background, windowed for visible)
-- Plan what tools the agent will need access to
-- Define how the agent will report results back
+- Define specific task for the brain agent
+- Choose model: haiku (simple), sonnet (standard), opus (complex)
+- Choose layout: headless (background), horizontal (side-by-side), tiled (grid)
+- Plan tool access: terminal, file, web
+- Define how agent reports results back (brain_post, brain_dm, or file output)
+
+### 4. Spawn Strategy
+**Option A — brain_swarm (recommended for feature dev):**
+```text
+mcp_brain_brain_swarm
+  task="Complete feature: [description]"
+  agents=[
+    {"name": "worker-1", "files": ["src/file1.ts"], "task": "Task description"},
+    {"name": "worker-2", "files": ["src/file2.ts"], "task": "Task description"}
+  ]
+```
+Auto-registers as lead, creates task plan, spawns agents in parallel.
+
+**Option B — brain_wake (manual control):**
+```text
+mcp_brain_brain_wake
+  name="worker-1"
+  task="Task description with full context"
+  layout="horizontal"
+  model="sonnet"
+```
+Spawn one at a time or in parallel. Monitor with `brain_agents`.
+
+### 5. Agent Lifecycle (for spawned agents)
+Each agent should:
+1. `brain_register` with their name
+2. `brain_get` the shared context key (e.g., "feature-context")
+3. `brain_claim` files before editing (prevents conflicts)
+4. Do the work
+5. `brain_release` files when done
+6. `brain_post` results to the channel
+7. `/exit` when finished
+
+### 6. Verification
+After implementation:
+```text
+mcp_brain_brain_gate --dry_run true              # Check for type errors
+mcp_brain_brain_gate --notify true               # Full gate — DMs agents their errors
+mcp_brain_brain_security_scan files=["src/"]     # Scan modified files
+```
+
+## Best Practices from Recent Swarms
+
+### What Worked Well
+- **Clear task scoping**: Agents perform best with specific, well-scoped tasks (not "implement auth system" but "add login route with email/password validation")
+- **File claim pattern**: Prevents two agents from editing the same file simultaneously
+- **Tiled layout for 3+ agents**: Best visibility for watching parallel work
+- **Gate before respawn**: Run gate first to get specific error messages, then respawn with context
+
+### Common Pitfalls
+- **Overly complex tasks**: Break into smaller steps. If a task takes >10 minutes, split it.
+- **Missing context**: Agents need file paths, existing code patterns, and exact requirements upfront
+- **Skipping claims**: Two agents edit same file → merge conflict at gate
+- **No timeout handling**: Long-running agents can hang. Use 2-5 minute timeouts.
+- **Gate without dry run**: Running full gate notifies agents of errors. Always dry_run first.
+
+### Troubleshooting
+
+**Agent not responding:**
+```text
+mcp_brain_brain_agents include_stale=true   # Check if it's stale
+mcp_brain_brain_respawn agent_name="X"       # Respawn with context
+```
+
+**Gate failures:**
+1. Dry run: `brain_gate --dry_run true` to see all errors
+2. Dm each agent: `brain_dm --to "agent-name" --content "Fix line 42"`
+3. Wait for fixes
+4. Re-run gate
+
+**Context lost:**
+```text
+mcp_brain_brain_checkpoint_restore     # Restore last state
+brain_context_get limit=20             # Review recent context
+```
+
+## Example: Replacing a Simulated Agent
+
+**Before (stubbed):**
+```typescript
+async function executeStep(task: string): Promise<Result> {
+  // TODO: replace with real agent
+  await new Promise(r => setTimeout(r, 50));
+  return { success: true, output: "fake" };
+}
+```
+
+**After (real brain agent):**
+```text
+# In the main session, spawn the agent:
+mcp_brain_brain_wake
+  name="step-executor"
+  task="Execute: [task]. Read [relevant files], implement, write results to /tmp/step-result.json, then exit."
+  layout="headless"
+  timeout=120
+
+# Monitor with:
+mcp_brain_brain_agents
+
+# Read results:
+mcp_terminal command="cat /tmp/step-result.json"
+```
+
+For full multi-agent orchestration patterns, see `brain-swarm-workflow`.
 
 ### 4. Implementation Strategy
 Replace the stub with:
