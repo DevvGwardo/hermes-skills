@@ -100,6 +100,8 @@ Based on practical implementation experience:
 
 1. **MCP Connectivity Verification**: Always verify brain MCP connectivity before assuming it works. Node.js module mismatches (like better_sqlite3 version issues) can be resolved with `npm rebuild` in the brain-mcp directory.
 
+2. **Hermes CLI Invocation**: The `hermes` command is an entry point script, not a Python module. Do NOT use `sys.executable -m hermes` or `python -m hermes`. Always call the CLI binary directly at `~/.hermes/hermes-agent/venv/bin/hermes` or via `shutil.which("hermes")`. This is critical for skills that spawn subprocesses to interact with Hermes (like this trajectory collector).
+
 2. **Sandbox Execution Limitations**: Direct terminal execution in Hermes sandbox environments may encounter TTY/issues. File-based approaches and script verification are often more reliable than relying on terminal output alone.
 
 3. **Cron Job Management**: Use `hermes cron list` rather than standalone `cronjob` commands for reliable cron job inspection and management within the Hermes environment.

@@ -103,27 +103,78 @@ node dist/index.js --help 2>&1 | head -5
 ```
 
 ### 4. Advanced: Node.js Module Compatibility Diagnostics
-When encountering module errors (e.g., better_sqlite3.node):
+When encountering module errors (e.g., better_sqlite3.node ABI mismatch):
+
+**Diagnosis:**
 ```bash
-# Navigate to brain MCP directory
 cd ~/brain-mcp
+# Check compiled binary N-API version (if possible)
+node -e "try { console.log(require('better-sqlite3/package.json').version); } catch(e) { console.log(e.message); }"
 
-# Check compiled Node.js version for native modules
-strings node_modules/better-sqlite3/build/Release/better_sqlite3.node | grep NODE_MODULE_VERSION
+# Check current Node.js version
+node --version
 
-# Current Node.js version
-node -v | sed 's/v//'
-
-# Rebuild native modules for current Node.js
-npm rebuild
-
-# Alternative: Fresh install if rebuild fails
-# rm -rf node_modules package-lock.json
-# npm install
-
-# Test if server loads correctly now
-node dist/index.js --help 2>&1 | head -5
+# Check which Node the brain-mcp process is actually using
+ps aux | grep brain-mcp | grep -v grep
+# (Often multiple processes may be running from previous Node versions)
 ```
+
+**Recovery Procedure for ABI Mismatch:**
+
+1. **Kill all existing brain-mcp processes** (they hold the incompatible binary in memory):
+   ```bash
+   pkill -9 -f 'brain-mcp/dist/index.js'
+   sleep 2
+   ```
+
+2. **Ensure correct Node version via nvm**:
+   ```bash
+   source ~/.nvm/nvm.sh
+   nvm use 22  # or whichever version your system targets
+   node --version  # confirm
+   ```
+
+3. **Remove the problematic module completely**:
+   ```bash
+   rm -rf node_modules/better-sqlite3
+   npm cache clean --force
+   ```
+
+4. **Force rebuild from source** (prevents npm from fetching prebuilt binary for a different Node version):
+   ```bash
+   npm_config_build_from_source=true npm install better-sqlite3
+   ```
+   Or, for a full reinstall:
+   ```bash
+   rm -f package-lock.json  # delete locked version that might target different Node
+   npm_config_build_from_source=true npm install
+   ```
+
+5. **Verify the module loads**:
+   ```bash
+   node -e "require('better-sqlite3'); console.log('OK');"
+   ```
+   Should print `OK` with no errors.
+
+6. **Restart brain-mcp server using the same Node environment**:
+   ```bash
+   # Recommended: use npm start with nvm context
+   source ~/.nvm/nvm.sh && nvm use 22 && cd ~/brain-mcp && npm start &
+   sleep 5
+   ```
+
+7. **Test MCP connectivity**:
+   ```bash
+   hermes mcp test brain
+   ```
+   Should show `✓ Connected` and list tools.
+
+8. **Update heartbeat status** (if cron didn't already):
+   ```bash
+   echo OK > ~/.hermes/brain_heartbeat.status
+   ```
+
+**Key Insight:** `npm rebuild` often pulls prebuilt binaries that match the latest Node rather than compiling for your current version. Forcing source build with `npm_config_build_from_source=true` ensures native module compatibility. Additionally, running processes must be restarted to release the old binary from memory.
 
 ### 5. Supplemental: Check Heartbeat History
 Review historical context from the brain heartbeat monitoring system:

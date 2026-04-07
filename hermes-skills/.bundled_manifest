@@ -22,9 +22,9 @@ github-code-review:8bbf670174d05e171e813f85069bada0
 github-issues:ecb864a88aeea8f88f5b8742fec8806b
 github-pr-workflow:cab1d57b84e253dddff37bd212f469ca
 github-repo-management:5c79dd94f418ccd6d297b80fefa1be65
-godmode:107339122cdf3a708856f23f1fe26010
+godmode:31081226028b5ceff6331a05597fdcb9
 google-workspace:1a50c15dcd737b6bba9fec048e037d5e
-grpo-rl-training:23a98cbee454cae0c0e7f4749d48b8d3
+grpo-rl-training:3465d05607abbb04d266c56c58cc5a1d
 guidance:91a9c28434674575077a9a8fc222f559
 heartmula:ce53b2e6c9d68238cae5ae727738ecde
 hermes-agent:9eb5f5d795bc03a1e3cf8d87c210bd09
@@ -36,7 +36,7 @@ linear:a0273574b97ca56dd74f2a398b0fc9c3
 llama-cpp:ea44fc1c259f0d570c8c9dfcaba5b3e5
 llm-wiki:f901eecc4f5bec39ca787d173e311c60
 lm-evaluation-harness:d9cd486dd94740c9e0400258759a8f54
-manim-video:09c1f0157a356554596a428a85aa196c
+manim-video:a5e504fec08425b72a82e975c3e89fdd
 mcporter:a1736a8c1837ea3a9b157b759af675d7
 minecraft-modpack-server:3cc682f8aef5f86d3580601ba28f9ba3
 modal:957d93b8e4bf44fb229a0466df169f36

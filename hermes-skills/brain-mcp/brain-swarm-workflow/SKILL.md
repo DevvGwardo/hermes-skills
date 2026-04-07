@@ -306,3 +306,38 @@ mcp_brain_brain_release resource="src/api.ts"
 - brain_swarm auto-registers as lead — no need to call brain_register manually for the lead
 - Always dry_run gate before running with notifications
 - The architect should run first, then post its output so subsequent agents can read it
+
+## Stale Context Recovery (critical)
+
+When restoring a brain-context from a previous session, check the journal first:
+
+```bash
+# Always check stale context BEFORE spawning
+mcp_brain_brain_get "swarm:task"           # What was being worked on
+mcp_brain_brain_get "swarm-context"        # Prior context summary
+mcp_brain_brain_get "__brain_stale_agents__"  # Prior agents still listed?
+
+# Read the workflow journal
+read_file("~/workflow-journal/LATEST.md")
+```
+
+A previous session's context block is a snapshot — agents listed there may have exited or never finished. Don't assume their work is complete. Use the findings/files already produced (e.g. `AGENTS.md` with architect-findings and reviewer-findings) as your starting point, not the prior swarm task description.
+
+## Dual Brain Integration Modes
+
+When the target project has brain MCP integration already (even partial), identify which mode it uses BEFORE delegating:
+
+| Mode | How | Used in |
+|---|---|---|
+| **Subprocess RPC** | `asyncio.create_subprocess_exec` + raw JSON-RPC over stdio | `main.py` |
+| **HTTP gateway** | `httpx` calls to `localhost:18789` | `hermes_adapter.py` |
+
+Both use `_brain_` prefixed helpers but differ in transport. HTTP mode is for fire-and-forget pooled caching (cross-session state). RPC mode is for full tool access (brain_set, pulse, claim, wake). Mixing them up causes silent failures — make sure agents know which mode applies to their file.
+
+## Wrapper Refactor Trap
+
+A common failure mode when refactoring: introducing wrapper functions (e.g. `_mark_request_started()`) but leaving stale inline code at the call site. Causes `UnboundLocalError` because the old code still references module globals without declaring `global`.
+
+Detection: grep for the old inline code near where the wrapper is now called. Look for `_bridge_total_requests +=` or `_update_bridge_metrics` calls that overlap with wrapper responsibilities.
+
+Prevention: delete the old inline block in the same commit that adds the wrapper.

@@ -4,158 +4,145 @@ description: Monitor the health of the Hermes Brain MCP system using the oversee
 category: devops
 ---
 ## Overview
-Monitor the health of the Hermes Brain MCP system using the brain overseer monitoring approach. This skill provides a systematic approach to locate, execute, and interpret the brain overseer heartbeat monitoring by examining log files, status files, and the overseer script logic. Based on actual system inspection, the overseer monitoring is implemented via check_brain_heartbeat.py which executes the brain_heartbeat.sh script and analyzes job status. When standard scripts are not found, direct MCP tool calls (mcp_brain_brain_agents) can be used to check agent status and heartbeat freshness.
+Monitor the health of the Hermes Brain MCP system using the brain overseer monitoring approach. This skill provides a systematic approach to locate, execute, and interpret the brain overseer heartbeat monitoring by examining log files, status files, and the overseer script logic. The primary overseer is a shell script (`brain_overseer.sh`) that runs every 2 minutes via cron. It checks the freshness of the heartbeat status file and logs results to `brain_overseer.log`. A separate heartbeat script (`brain_heartbeat.sh`) runs every minute to directly test Brain MCP responsiveness.
+
+**Critical note:** The `show_agents.py` script often fails with `ModuleNotFoundError: No module named 'hermes_tools'` because the hermes_tools package isn't in the Python path when run standalone. Rely on direct script execution and log analysis instead.
 
 ## When to Use
 - Checking if the Brain MCP system is responsive
 - Investigating system health alerts
 - Verifying cron job execution for brain MCP monitoring
 - Standard overseer scripts are not available or not executing
-## Overview
+
+## Prerequisites
 Monitor the health of the Hermes Brain MCP system using the brain overseer script and associated heartbeat monitoring tools. This skill provides a systematic approach to locate, execute, and interpret the brain overseer heartbeat monitoring by examining log files, status files, and the overseer script logic.
 
 ## Steps
 
-### 1. Locate the brain overseer cron job and related files
+### 1. Locate the brain overseer script and verify installation
 ```bash
-# Check the overseer cron job configuration
-hermes cron list | grep overseer
+# Check if the overseer script exists
+ls -la ~/.hermes/brain_overseer.sh
 
-# Or check the jobs file directly
-cat $HOME/.hermes/cron/jobs.json | grep -A 20 overseer
+# Check heartbeat script
+ls -la ~/.hermes/brain_heartbeat.sh
 
-# Locate the heartbeat monitoring files
-find $HOME/.hermes -name '*heartbeat*' -type f
+# Verify log and status files exist
+ls -la ~/.hermes/brain_overseer.log ~/.hermes/brain_heartbeat.log ~/.hermes/brain_heartbeat.status
 ```
 
-Expected output includes:
-- Cron job with ID matching "brain-overseer" (or similar name) that runs every 2 minutes
-- `$HOME/.hermes/brain_heartbeat.sh` - The heartbeat execution script (runs every minute)
-- `$HOME/.hermes/brain_heartbeat.log` - Heartbeat logging
-- `$HOME/.hermes/brain_heartbeat.status` - Current heartbeat status
-- Output files in `$HOME/.hermes/cron/output/[job_id]/`
+All four files should exist. The overseer and heartbeat scripts should be executable.
 
-### 2. Check the overseer cron job execution
+### 2. Run the overseer check directly
 ```bash
-# View the most recent overseer job output
-OVERSEER_JOB_ID=$(hermes cron list | grep overseer | head -1 | awk '{print $1}')
-hermes cron output $OVERSEER_JOB_ID
-
-# Or check the latest output file directly
-ls -t $HOME/.hermes/cron/output/*/ | head -1 | xargs ls -t | head -1
-cat [latest_output_file]
-
-# The overseer job output contains the heartbeat monitoring results
+~/.hermes/brain_overseer.sh
+echo "Exit code: $?"
 ```
 
-### 3. Review overseer output and history
+The script always exits with code 0 (it logs issues, doesn't fail). Check the log immediately after:
 ```bash
-# View recent overseer activity (output from last execution)
-# Find the overseer job ID and get its latest output
-OVERSEER_JOB_ID=$(hermes cron list | grep overseer | head -1 | awk '{print $1}')
-hermes cron output $OVERSEER_JOB_ID
-
-# Check overseer execution history
-ls -t $HOME/.hermes/cron/output/$OVERSEER_JOB_ID/ | head -5
+tail -5 ~/.hermes/brain_overseer.log
 ```
 
-The overseer job output shows:
-- Job execution details including prompt and schedule
-- Whether the script ran successfully
-- What it output
-- Current status of the MCP/brain system
+**Expected healthy output:** `OVERSEER HEARTBEAT_FRESH: Heartbeat is being updated regularly`
 
-### 4. Check current heartbeat status
+### 3. Check current heartbeat status and recent activity
 ```bash
-# View the current heartbeat status
-cat $HOME/.hermes/brain_heartbeat.status
+# Current status
+cat ~/.hermes/brain_heartbeat.status
 
-# View recent heartbeat activity
-tail -20 $HOME/.hermes/brain_heartbeat.log
+# Recent heartbeat checks (last 20 lines)
+tail -20 ~/.hermes/brain_heartbeat.log
 ```
 
-### 5. Interpret the output from logs and status files
-Look for these key indicators:
+The heartbeat script runs every minute and produces `HEARTBEAT_OK` or `HEARTBEAT_FAIL` entries.
 
-**In the overseer log (`brain_overseer.log`):**
-- `OVERSEER HEARTBEAT_FRESH`: Heartbeat is being updated regularly (healthy)
-- `OVERSEER HEARTBEAT_STALE`: Heartbeat has not been updated in over 2 minutes (needs attention)
-- `OVERSEER RECENT_FAILURES`: Shows recent heartbeat failures from the heartbeat log
-- `OVERSEER RECOVERY_ATTEMPT`: Indicates the overseer is attempting recovery procedures
-
-**In the heartbeat log (`brain_heartbeat.log`):**
-- `HEARTBEAT_OK`: Brain MCP is responsive (healthy)
-- `HEARTBEAT_FAIL`: Brain MCP is not responsive (unhealthy)
-- `SELF_HEAL`: Indicates self-healing procedures were attempted
-- Timestamped entries show when checks occurred
-
-**In the heartbeat status file (`brain_heartbeat.status`):**
-- `OK`: Indicates the last known good state (may be stale if not updated recently)
-- Other values indicate specific error conditions
-
-## Example Healthy Overseer Log Output
-```
-[2026-04-05 07:54:49] OVERSEER START: Overseer check initiated
-[2026-04-05 07:54:49] OVERSEER HEARTBEAT_FRESH: Heartbeat is being updated regularly
-[2026-04-05 07:54:49] OVERSEER END: Overseer check completed
+### 4. Verify file freshness (critical for detecting stale monitoring)
+```bash
+# Check modification times to ensure monitoring is active
+now=$(date +%s)
+stat -f %m ~/.hermes/brain_heartbeat.status | xargs -I{} echo "status: $(( (now - {}) / 60 )) minutes old"
+stat -f %m ~/.hermes/brain_heartbeat.log | xargs -I{} echo "log: $(( (now - {}) / 60 )) minutes old"
+stat -f %m ~/.hermes/brain_overseer.log | xargs -I{} echo "overseer: $(( (now - {}) / 60 )) minutes old"
 ```
 
-## Example Stale Heartbeat Overseer Log Output
-```
-[2026-04-05 07:54:49] OVERSEER START: Overseer check initiated
-[2026-04-05 07:54:49] OVERSEER HEARTBEAT_STALE: Heartbeat has not been updated in over 2 minutes
-[2026-04-05 07:54:49] OVERSEER LAST_STATUS: Last heartbeat status was: OK
-[2026-04-05 07:54:49] OVERSEER RECOVERY_ATTEMPT: Triggering heartbeat recovery procedures
-[2026-04-05 07:54:49] OVERSEER RECENT_FAILURES: Found recent heartbeat failures:
-[2026-04-04 19:10:56] HEARTBEAT_FAIL: Brain MCP is not responsive
-[2026-04-05 07:54:49] OVERSEER END: Overseer check completed
+All files should be less than 3 minutes old. A stale `brain_heartbeat.status` with a fresh overseer log indicates the heartbeat script may be running slowly or getting stuck.
+
+### 5. Check cron job configuration (for historical/verification purposes)
+```bash
+# List cron jobs
+hermes cron list
+
+# Or inspect the jobs JSON directly - note the structure has a "jobs" wrapper
+python3 -c "import json; data=json.load(open('$HOME/.hermes/cron/jobs.json')); print(json.dumps([j for j in data['jobs'] if 'heartbeat' in j['name'].lower() or 'overseer' in j['name'].lower()], indent=2))"
 ```
 
-## Troubleshooting\\nIf the overseer cron job is not found or not executing:\\n1. Check if `$HOME/.hermes` directory exists\\n2. Verify the hermes agent is properly installed\\n3. Check cron jobs with `hermes cron list`\\n4. Look for overseer-related jobs in the output\\n5. Ensure the cron daemon is running\\n\\nIf the heartbeat shows issues despite overseer running:\\n- Check the heartbeat status file: `cat $HOME/.hermes/brain_heartbeat.status`\\n- Review recent heartbeat activity: `tail -20 $HOME/.hermes/brain_heartbeat.log`\\n- Check overseer output for execution details\\n\\nPattern recognition from monitoring:\\n- Overseer runs every 2 minutes via cron to check heartbeat freshness\\n- Heartbeat script runs every minute via cron to check Brain MCP responsiveness\\n- Heartbeat log shows alternating HEARTBEAT_OK and HEARTBEAT_FAIL during intermittent issues\\n- Status file shows the last known state (may be stale if not updated recently)\\n- Failures trigger self-heal logging in the heartbeat script\\n- Overseer output includes whether the script ran successfully and what it output\\n\\nAdditional insights from execution:\\n- The overseer approach uses cron job inspection rather than direct script execution\\n- When running via cron, monitoring provides historical trend data\\n- Heartbeat failures often appear as clusters showing when Brain MCP became unresponsive\\n- Recovery attempts are logged in the evangel but don't fix underlying issues\\n- The overseer log (via cron output) provides valuable trend data for diagnosing intermittent problems\\n- Both overse report and heartbeat monitoring are needed for complete picture
+Key jobs to verify:
+- `brain-heartbeat` (schedule: `* * * * *`) - runs every minute
+- `brain-overseer` (schedule: `*/2 * * * *`) - runs every 2 minutes
 
-## Notes\n- The brain overseer runs every 2 minutes via cron to monitor heartbeat freshness\n- It executes the check_brain_heartbeat.py script which runs the heartbeat script and reports results\n- The overseer determines freshness by checking job execution and output\n- Historical tracking is available through cron output files\n- This approach complements direct MCP tool calls by providing trend analysis\n- The overseer monitoring is part of the hermes agent cron job system for brain system monitoring
+### 6. Interpret health from logs and status
 
-## Example Healthy Output
-```
-◇ session-97520 — idle
-◆ session-97521 — working: processing request
-✓ session-97522 — done: completed analysis
-```
+### 6. Interpret health from logs and status files
 
-## Example Output Showing MCP Connectivity Check
-```
-◇ session-97520 — idle (checking MCP access...)
-```
+**Overseer log patterns:**
+- `OVERSEER HEARTBEAT_FRESH` — heartbeat file updated within 2.5 minutes (healthy)
+- `OVERSEER HEARTBEAT_STALE` — no recent updates (warning)
+- `OVERSEER LAST_STATUS: OK` with STALE — heartbeat mechanism partially functional but not updating frequently enough
+- `OVERSEER RECENT_FAILURES:` followed by timestamps — shows historical failures, useful for spotting intermittent issues
 
-## Example Unhealthy Output
-```
-Error getting agent status: MCP connection timeout
-◇ session-97520 — idle (error)
-```
+**Heartbeat log patterns:**
+- `HEARTBEAT_OK` — MCP responded within timeout (healthy)
+- `HEARTBEAT_FAIL` — MCP unresponsive after retries (unhealthy)
+- Clusters of failures followed by recovery indicate transient issues
 
-## Troubleshooting
-If show_agents.py is not found:
-1. Check if `$HOME/.hermes` directory exists
-2. Verify the hermes agent is properly installed
-3. Look for the script in alternative locations as shown in step 1
-4. The script may also be located in the agent/ directory as part of the hermes agent codebase
+**Status file:**
+- `OK` — last successful check (may be stale if file not updated)
+- Other values indicate specific error states
 
-If the output shows persistent error messages:
-- This indicates the Brain MCP system may be down or unresponsive
-- Check network connectivity to MCP services
-- Review MCP server logs for errors
+**File freshness cross-check:**
+- Fresh `brain_overseer.log` + fresh `brain_heartbeat.log` + fresh `brain_heartbeat.status` = healthy monitoring system
+- Fresh overseer + stale status file = heartbeat script not completing (possible hang)
+- Stale overseer log = cron job not running
+
+**Key insight:** Transient failures are common. A single or small cluster of `HEARTBEAT_FAIL` entries followed by `HEARTBEAT_OK` does not necessarily indicate a problem requiring action. Look for sustained failure patterns.
+
+### 7. Troubleshooting
+
+**Overseer script fails to run or missing:**
+- Verify `~/.hermes/brain_overseer.sh` exists and is executable (`chmod +x`)
+- Check cron daemon is running: `pgrep cron` or `systemctl status cron`
+- Inspect cron job definition: `hermes cron list` should show `brain-overseer` job
+
+**show_agents.py unreliable:**
+- Do not rely on `show_agents.py` for critical health checks — it frequently fails with `ModuleNotFoundError: No module named 'hermes_tools'` due to missing PYTHONPATH configuration.
+- The direct script + log analysis approach is more reliable.
+
+**Persistent `HEARTBEAT_FAIL` entries:**
+- Check if Brain MCP server process is running
+- Review MCP server logs (location varies by installation)
 - Consider restarting the hermes agent or MCP services
-- Verify that the brain mcp tools are properly registered and accessible
+- Look for resource constraints (CPU, memory, disk space)
 
-Pattern recognition from monitoring:
-- "(checking MCP access...)" indicates the script is attempting to establish MCP connectivity
-- Consistent idle status with no errors suggests healthy but inactive system
-- Working status indicates active processing
-- Error messages require investigation of MCP connectivity or service availability
+**Stale files (no updates for >5 minutes):**
+- Overseer log stale: cron job not executing — check cron daemon and job configuration
+- Heartbeat log stale but overseer fresh: heartbeat script may be hanging — check if `brain_heartbeat.sh` is running
+- Status file stale with fresh logs: heartbeat script completing but MCP calls timing out
 
-## Notes
-- The show_agents.py script uses direct MCP brain tool calls to get agent status
-- Provides real-time health check without requiring log file inspection
-- Output includes visual status indicators (◇, ◆, ✓, ✗) for quick assessment
-- Can be run manually for on-demand health checking or automated via cron
-- The script is part of the hermes agent toolset for brain system monitoring
+### 8. Complete Health Assessment Checklist
+
+- [ ] `brain_overseer.sh` exists and is executable
+- [ ] `brain_heartbeat.sh` exists and is executable
+- [ ] All three files (status, heartbeat log, overseer log) modified within last 3 minutes
+- [ ] Overseer log shows `HEARTBEAT_FRESH` on most recent check
+- [ ] Heartbeat log shows predominantly `HEARTBEAT_OK` entries
+- [ ] No clusters of 5+ consecutive `HEARTBEAT_FAIL` entries in last 30 minutes
+- [ ] Cron jobs `brain-heartbeat` and `brain-overseer` are enabled and scheduled correctly
+
+### 9. Notes
+
+- The overseer is intentionally conservative: it logs issues but does **not** attempt automatic restarts to avoid interfering with manual troubleshooting.
+- The heartbeat script runs *every minute*; the overseer runs *every 2 minutes*. This overlap ensures detection even if one check is temporarily missed.
+- Cron output files in `~/.hermes/cron/output/[job_id]/` provide historical execution records for trend analysis.
+- This approach complements (does not replace) direct MCP tool availability checks when building or testing Hermes agents.
+- The `check_brain_heartbeat.py` file in `~/.hermes/hermes-agent/` is a small wrapper for cron to execute; the real work happens in the shell scripts.
