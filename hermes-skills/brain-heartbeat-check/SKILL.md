@@ -37,15 +37,18 @@ hermes mcp tools
 ### 2. Fallback Method: Script-Based Check (Cron/Restricted Environments)
 When direct MCP tool access requires approval (like in cron jobs), use the dedicated brain heartbeat script:
 ```bash
-# Locate and execute the brain heartbeat script
-bash $(find ~/.hermes -name \"brain_heartbeat.sh\" -type f | head -1)
+bash ~/.hermes/brain_heartbeat.sh
 ```
 
-**Script Output Analysis:**
-- `◇ session-XXXXXX — idle (checking MCP access...)`: Script executed but MCP tools not directly accessible (expected in cron jobs) - **INDICATES SUCCESSFUL EXECUTION**
-- `◇ session-XXXXXX — idle (error)`: Script encountered an error during execution
-- Detailed session output with actual agent data: Indicates direct MCP access succeeded within script context
-- **Success Criteria**: Script runs without Python exceptions (exit code 0), regardless of output content
+**Script Behavior:**
+- Runs `hermes mcp test brain` up to 3 times with 2-second backoff
+- Checks for `(successful|✓|passed|Connected)` in output
+- On failure: kills zombie watchdogs (>2min old), waits, retries
+- If still failing: full restart (kill all watchdogs + main server), waits for respawn
+- Updates `~/.hermes/brain_heartbeat.status` with `OK` or `FAIL`
+- Logs to `~/.hermes/brain_heartbeat.log`
+
+**Success Criteria**: Script exits 0, status file shows `OK`
 
 ### 3. Diagnostic Method: Server Process & Configuration Verification
 For troubleshooting when health checks indicate issues:
@@ -129,5 +132,5 @@ fi
   - Direct tools: Brain server connected with available tools
   - Script fallback: Script executes successfully (exit code 0)  
   - Diagnostics: Server script exists, Node.js compatible, processes running
-- **Troubleshooting Focus**: When seeing \"checking MCP access...\" in script output, verify server connectivity and tool discovery separately
+**Troubleshooting Focus**: When HEARTBEAT_FAIL persists after restart, check `tail ~/.hermes/brain_heartbeat.log` for SELF_HEAL details
 - **Safety**: All check methods are lightweight and non-invasive for frequent use
