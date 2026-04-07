@@ -1,0 +1,274 @@
+{
+  "metadata": {
+    "collection_start": "2026-04-07T13:15:17.556391",
+    "collection_end": "2026-04-07T13:19:18.673121",
+    "total_steps": 8,
+    "duration_seconds": 241.11673307418823
+  },
+  "trajectories": [
+    {
+      "state": {
+        "timestamp": "2026-04-07T13:15:17.556395",
+        "load_avg": [
+          5.13134765625,
+          3.90673828125,
+          3.734375
+        ],
+        "active_agents": 0,
+        "queue_depth": 0,
+        "mcp_status": "status_check_failed"
+      },
+      "action": {
+        "type": "monitor",
+        "details": {
+          "sample_interval": 30,
+          "trigger": "periodic_check"
+        }
+      },
+      "reward": 0.0,
+      "next_state": {
+        "timestamp": "2026-04-07T13:15:47.597335",
+        "load_avg": [
+          4.4306640625,
+          3.8515625,
+          3.7197265625
+        ],
+        "active_agents": 0,
+        "queue_depth": 0,
+        "mcp_status": "status_check_failed"
+      },
+      "timestamp": "2026-04-07T13:15:47.672145"
+    },
+    {
+      "state": {
+        "timestamp": "2026-04-07T13:15:47.597335",
+        "load_avg": [
+          4.4306640625,
+          3.8515625,
+          3.7197265625
+        ],
+        "active_agents": 0,
+        "queue_depth": 0,
+        "mcp_status": "status_check_failed"
+      },
+      "action": {
+        "type": "monitor",
+        "details": {
+          "sample_interval": 30,
+          "trigger": "periodic_check"
+        }
+      },
+      "reward": 0.0,
+      "next_state": {
+        "timestamp": "2026-04-07T13:16:17.747385",
+        "load_avg": [
+          3.85888671875,
+          3.755859375,
+          3.6875
+        ],
+        "active_agents": 0,
+        "queue_depth": 0,
+        "mcp_status": "status_check_failed"
+      },
+      "timestamp": "2026-04-07T13:16:17.815381"
+    },
+    {
+      "state": {
+        "timestamp": "2026-04-07T13:16:17.747385",
+        "load_avg": [
+          3.85888671875,
+          3.755859375,
+          3.6875
+        ],
+        "active_agents": 0,
+        "queue_depth": 0,
+        "mcp_status": "status_check_failed"
+      },
+      "action": {
+        "type": "monitor",
+        "details": {
+          "sample_interval": 30,
+          "trigger": "periodic_check"
+        }
+      },
+      "reward": 0.0,
+      "next_state": {
+        "timestamp": "2026-04-07T13:16:47.890177",
+        "load_avg": [
+          3.24365234375,
+          3.6181640625,
+          3.63916015625
+        ],
+        "active_agents": 0,
+        "queue_depth": 0,
+        "mcp_status": "status_check_failed"
+      },
+      "timestamp": "2026-04-07T13:16:47.962377"
+    },
+    {
+      "state": {
+        "timestamp": "2026-04-07T13:16:47.890177",
+        "load_avg": [
+          3.24365234375,
+          3.6181640625,
+          3.63916015625
+        ],
+        "active_agents": 0,
+        "queue_depth": 0,
+        "mcp_status": "status_check_failed"
+      },
+      "action": {
+        "type": "monitor",
+        "details": {
+          "sample_interval": 30,
+          "trigger": "periodic_check"
+        }
+      },
+      "reward": 0.0,
+      "next_state": {
+        "timestamp": "2026-04-07T13:17:18.036960",
+        "load_avg": [
+          3.083984375,
+          3.54150390625,
+          3.60986328125
+        ],
+        "active_agents": 0,
+        "queue_depth": 0,
+        "mcp_status": "status_check_failed"
+      },
+      "timestamp": "2026-04-07T13:17:18.099691"
+    },
+    {
+      "state": {
+        "timestamp": "2026-04-07T13:17:18.036960",
+        "load_avg": [
+          3.083984375,
+          3.54150390625,
+          3.60986328125
+        ],
+        "active_agents": 0,
+        "queue_depth": 0,
+        "mcp_status": "status_check_failed"
+      },
+      "action": {
+        "type": "monitor",
+        "details": {
+          "sample_interval": 30,
+          "trigger": "periodic_check"
+        }
+      },
+      "reward": 0.0,
+      "next_state": {
+        "timestamp": "2026-04-07T13:17:48.172583",
+        "load_avg": [
+          3.6552734375,
+          3.61962890625,
+          3.63330078125
+        ],
+        "active_agents": 0,
+        "queue_depth": 0,
+        "mcp_status": "status_check_failed"
+      },
+      "timestamp": "2026-04-07T13:17:48.232776"
+    },
+    {
+      "state": {
+        "timestamp": "2026-04-07T13:17:48.172583",
+        "load_avg": [
+          3.6552734375,
+          3.61962890625,
+          3.63330078125
+        ],
+        "active_agents": 0,
+        "queue_depth": 0,
+        "mcp_status": "status_check_failed"
+      },
+      "action": {
+        "type": "monitor",
+        "details": {
+          "sample_interval": 30,
+          "trigger": "periodic_check"
+        }
+      },
+      "reward": 0.0,
+      "next_state": {
+        "timestamp": "2026-04-07T13:18:18.307295",
+        "load_avg": [
+          3.61962890625,
+          3.6083984375,
+          3.62744140625
+        ],
+        "active_agents": 0,
+        "queue_depth": 0,
+        "mcp_status": "status_check_failed"
+      },
+      "timestamp": "2026-04-07T13:18:18.367119"
+    },
+    {
+      "state": {
+        "timestamp": "2026-04-07T13:18:18.307295",
+        "load_avg": [
+          3.61962890625,
+          3.6083984375,
+          3.62744140625
+        ],
+        "active_agents": 0,
+        "queue_depth": 0,
+        "mcp_status": "status_check_failed"
+      },
+      "action": {
+        "type": "monitor",
+        "details": {
+          "sample_interval": 30,
+          "trigger": "periodic_check"
+        }
+      },
+      "reward": 0.0,
+      "next_state": {
+        "timestamp": "2026-04-07T13:18:48.440339",
+        "load_avg": [
+          3.669921875,
+          3.6015625,
+          3.62158203125
+        ],
+        "active_agents": 0,
+        "queue_depth": 0,
+        "mcp_status": "status_check_failed"
+      },
+      "timestamp": "2026-04-07T13:18:48.512960"
+    },
+    {
+      "state": {
+        "timestamp": "2026-04-07T13:18:48.440339",
+        "load_avg": [
+          3.669921875,
+          3.6015625,
+          3.62158203125
+        ],
+        "active_agents": 0,
+        "queue_depth": 0,
+        "mcp_status": "status_check_failed"
+      },
+      "action": {
+        "type": "monitor",
+        "details": {
+          "sample_interval": 30,
+          "trigger": "periodic_check"
+        }
+      },
+      "reward": 0.0,
+      "next_state": {
+        "timestamp": "2026-04-07T13:19:18.582223",
+        "load_avg": [
+          2.8876953125,
+          3.41552734375,
+          3.55224609375
+        ],
+        "active_agents": 0,
+        "queue_depth": 0,
+        "mcp_status": "status_check_failed"
+      },
+      "timestamp": "2026-04-07T13:19:18.672173"
+    }
+  ]
+}

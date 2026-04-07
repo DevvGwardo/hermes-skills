@@ -35,45 +35,78 @@ hermes mcp tools
 - Brain-specific tools appear in the tool list (e.g., `mcp_brain_brain_sessions`)
 
 ### 2. Fallback Method: Script-Based Check (Cron/Restricted Environments)
-When direct MCP tool access requires approval (like in cron jobs), use the dedicated brain heartbeat script:
+When direct MCP tool access requires approval (like in cron jobs), two monitoring scripts work together:
+
+**2a. Heartbeat Cron Job (`check_brain_heartbeat.py`)**
+This is the actual cron job that runs every minute. It executes the shell script and reports results. View its status:
 ```bash
-bash ~/.hermes/brain_heartbeat.sh
+hermes cron list brain-heartbeat  # or check_cron.py
+# Shows schedule, last_run_at, last_status, completed runs
 ```
 
-**Script Behavior:**
+**2b. Self-Healing Shell Script (`~/.hermes/brain_heartbeat.sh`)**
+The cron job calls this script, which:
 - Runs `hermes mcp test brain` up to 3 times with 2-second backoff
 - Checks for `(successful|✓|passed|Connected)` in output
-- On failure: kills zombie watchdogs (>2min old), waits, retries
-- If still failing: full restart (kill all watchdogs + main server), waits for respawn
+- On failure: kills zombie watchdogs (>300 seconds old), waits, retries
+- If still failing: sends SIGTERM to main server PID to trigger watchdog respawn
 - Updates `~/.hermes/brain_heartbeat.status` with `OK` or `FAIL`
 - Logs to `~/.hermes/brain_heartbeat.log`
 
 **Success Criteria**: Script exits 0, status file shows `OK`
 
+**Important**: The `show_agents.py` script is a separate *monitor* that displays active agent sessions. It is NOT the heartbeat check itself. Use `brain_heartbeat.sh` or `check_brain_heartbeat.py` for actual health verification.
+
 ### 3. Diagnostic Method: Server Process & Configuration Verification
 For troubleshooting when health checks indicate issues:
 ```bash
 # Verify brain server script exists and is accessible
-ls -la /Users/devgwardo/brain-mcp/dist/index.js
+ls -la ~/brain-mcp/dist/index.js
 
 # Check Node.js can load the server (shows compatibility issues)
-node /Users/devgwardo/brain-mcp/dist/index.js --help 2>&1 | head -5
+node ~/brain-mcp/dist/index.js --help 2>&1 | head -5
 
 # Verify Node.js version compatibility
 node --version
 
 # Check if brain server processes are running
 ps aux | grep brain-mcp | grep -v grep
+# Note: Multiple server instances can run simultaneously under different user contexts
 
 # Review brain MCP server configuration
 cat ~/.hermes/config.yaml | grep -A 10 -B 2 "mcp_servers:"
+```
+
+**Installation Path Note**: The brain-mcp server code is typically installed at `~/brain-mcp`, NOT inside the hermes-agent package. The hermes-agent provides the client (`hermes mcp`) that connects to it.
+
+### 4. Advanced: Node.js Module Compatibility Diagnostics
+When encountering module errors (e.g., better_sqlite3.node):
+```bash
+# Navigate to brain MCP directory
+cd ~/brain-mcp
+
+# Check compiled Node.js version for native modules
+strings node_modules/better-sqlite3/build/Release/better_sqlite3.node | grep NODE_MODULE_VERSION
+
+# Current Node.js version
+node -v | sed 's/v//'
+
+# Rebuild native modules for current Node.js
+npm rebuild
+
+# Alternative: Fresh install if rebuild fails
+# rm -rf node_modules package-lock.json
+# npm install
+
+# Test if server loads correctly now
+node dist/index.js --help 2>&1 | head -5
 ```
 
 ### 4. Advanced: Node.js Module Compatibility Diagnostics
 When encountering module errors (e.g., better_sqlite3.node):
 ```bash
 # Navigate to brain MCP directory
-cd /Users/devgwardo/brain-mcp
+cd ~/brain-mcp
 
 # Check compiled Node.js version for native modules
 strings node_modules/better-sqlite3/build/Release/better_sqlite3.node | grep NODE_MODULE_VERSION
@@ -114,15 +147,21 @@ STATUS=$(hermes mcp status brain 2>/dev/null || echo "MCP access not available")
 echo \"Brain MCP status: $STATUS\"
 
 # Fallback: Script-based check for cron/restricted environments  
-OUTPUT=$(python3 ./show_agents.py 2>/dev/null || echo "Script failed")
+# The cron job runs ~/.hermes/brain_heartbeat.sh every minute
+# To manually check:
+bash ~/.hermes/brain_heartbeat.sh
+OUTPUT=$(python3 ~/.hermes/hermes-agent/check_brain_heartbeat.py 2>/dev/null || echo "Script failed")
 echo \"Brain health check output: $OUTPUT\"
 
-# Verify script executed successfully (exit code 0)
-if python3 ./show_agents.py >/dev/null 2>&1; then
+# Verify heartbeat mechanism (exit code 0 on success)
+if bash ~/.hermes/brain_heartbeat.sh >/dev/null 2>&1; then
   echo \"Brain heartbeat check mechanism: OK\"
 else
   echo \"Brain heartbeat check mechanism: FAILED\"
 fi
+
+# Monitor agent sessions (separate diagnostics)
+python3 ~/.hermes/hermes-agent/show_agents.py
 ```
 
 ## Notes

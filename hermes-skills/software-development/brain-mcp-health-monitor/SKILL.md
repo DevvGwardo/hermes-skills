@@ -18,7 +18,18 @@ Monitor and maintain the health of the brain MCP (Model Context Protocol) system
 
 ## Procedure
 
-### 1. Check Overseer Logs
+### 1. Read the Heartbeat Script (if silent or unexpected output)
+If the heartbeat script produces no output or you need to understand its logic:
+```bash
+cat ~/.hermes/brain_heartbeat.sh
+```
+Identify:
+- The command it runs (`hermes mcp test brain`)
+- Success pattern (grep for `successful|✓|passed|Connected`)
+- Log and status file locations
+- Self-healing actions (killing zombies, restarting via watchdogs)
+
+### 2. Check Overseer Logs
 First, examine the brain overseer logs to understand recent health status:
 ```bash
 cat ~/.hermes/brain_overseer.log
@@ -51,6 +62,18 @@ Watch for:
 - Successful connection messages (✓ Connected)
 - Node.js compatibility errors (ERR_DLOPEN_FAILED, NODE_MODULE_VERSION mismatches)
 - Connection timeouts or closures
+
+### 5. Check Watchdog and Server Processes
+The heartbeat script relies on watchdog processes for self-healing. Verify they're active:
+```bash
+# Check for brain-mcp servers
+ps aux | grep 'brain-mcp/dist/index.js' | grep -v grep
+
+# Check for watchdog processes
+ps aux | grep 'watchdog.js' | grep -v grep
+```
+- If watchdogs are absent, the script cannot auto-restart failed servers.
+- Multiple server instances may be normal (load distribution) or indicate orphaned processes from previous runs.
 
 ### 5. Enable and Test Brain MCP Tools
 If the MCP connection is successful but you need to use brain tools:
@@ -118,6 +141,7 @@ If the system appears unhealthy:
 3. **Cron not running**: Verify cron daemon is active and jobs are scheduled
 4. **Permission issues**: Ensure scripts are executable (`chmod +x *.sh`)
 5. **Path issues**: Verify brain-mcp directory exists and is accessible
+6. **Heartbeat script exit 0 but no success log**: The script may be failing to match its success pattern due to transient output (e.g., cold start yielding incomplete data). Check the heartbeat log for pattern failures and verify system health directly with `hermes mcp test brain`. Understanding the script's grep pattern is key to diagnosing false negatives.
 
 ## Notes
 - The heartbeat script runs every minute via cron

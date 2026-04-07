@@ -16,10 +16,12 @@ from pathlib import Path
 def get_brain_mcp_status():
     """Get brain MCP system status."""
     try:
-        # Try to get agent status using available tools
-        result = subprocess.run([
-            sys.executable, '-m', 'hermes', 'status'
-        ], capture_output=True, text=True, timeout=10)
+        # Use the hermes CLI script from the venv directly
+        hermes_cli = Path.home() / ".hermes" / "hermes-agent" / "venv" / "bin" / "hermes"
+        result = subprocess.run(
+            [str(hermes_cli), "status"],
+            capture_output=True, text=True, timeout=10
+        )
         return result.stdout if result.returncode == 0 else "status_check_failed"
     except Exception as e:
         return f"status_error: {str(e)}"
