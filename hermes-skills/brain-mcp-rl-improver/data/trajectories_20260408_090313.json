@@ -1,0 +1,29 @@
+{
+  "metadata": {
+    "collection_time": "2026-04-08T09:03:13.538638",
+    "collection_type": "cron_snapshot",
+    "samples": 1
+  },
+  "trajectories": [
+    {
+      "state": {
+        "timestamp": "2026-04-08T09:03:13.538641",
+        "load_avg": [
+          2.8828125,
+          2.9892578125,
+          4.130859375
+        ],
+        "collection_context": "cron_scheduled_collection"
+      },
+      "action": {
+        "type": "monitor",
+        "details": {
+          "source": "cron_job",
+          "trigger": "scheduled_collection"
+        }
+      },
+      "reward": 0.0,
+      "notes": "System idle during collection window - no agent spawning/routing events observed"
+    }
+  ]
+}
