@@ -1,7 +1,7 @@
 ---
 name: hermes-agent-status-display
 description: Create an automatic agent status display for Hermes brain/MCP system with self-healing adaptations
-version: 2.0.0
+version: 2.1.0
 author: Hermes
 ---
 
@@ -19,9 +19,10 @@ Create an automatic agent status display that shows session status with visual i
 - When trial and error shows different approaches are needed in different contexts
 
 ## Limitations
-- Direct MCP brain tool access may not be available in all execution contexts
+- Direct MCP brain tool access may not be available in all execution contexts (returns "ClosedResourceError" in cron/sandbox contexts)
 - The hermes CLI command may not be available in minimal environments
 - Some status information requires specific tool availability
+- `hermes status` shows session counts but not individual session details — use SQLite queries for that
 
 ## Prerequisites
 - Hermes agent system installed
@@ -65,14 +66,56 @@ python -c "from hermes_cli.status import show_status; show_status(type('Args', (
 This approach works in sandboxed environments and provides the same comprehensive status information as the hermes CLI command.
 ```
 
-### 4. Alternative: Check Running Processes
+### 4. Alternative: Direct SQLite Database Query
+When MCP brain tools fail with "ClosedResourceError" or similar errors, query the state database directly for detailed session information that `hermes status` doesn't provide:
+
+```bash
+# Get sessions from the last hour with activity details
+sqlite3 ~/.hermes/state.db "
+SELECT id, source, model, started_at, ended_at, message_count
+FROM sessions
+WHERE started_at > strftime('%s', 'now') - 3600
+ORDER BY started_at DESC
+"
+```
+
+**Database schema (sessions table):**
+- `id` — session identifier
+- `source` — origin (cli, telegram, discord, cron, etc.)
+- `model` — model used
+- `started_at` / `ended_at` — Unix timestamps
+- `message_count` — total messages in session
+- `tool_call_count` — tool invocations
+
+**Useful queries:**
+```bash
+# Count sessions by source (last hour)
+sqlite3 ~/.hermes/state.db "
+SELECT source, COUNT(*) FROM sessions
+WHERE started_at > strftime('%s', 'now') - 3600
+GROUP BY source
+"
+
+# Find most active sessions
+sqlite3 ~/.hermes/state.db "
+SELECT id, source, message_count FROM sessions
+ORDER BY message_count DESC LIMIT 10
+"
+```
+
+This approach works when:
+- MCP brain tools are unavailable (common in cron/sandbox contexts)
+- You need session-level details beyond the summary in `hermes status`
+- You want to correlate session activity with specific models or sources
+
+### 5. Alternative: Check Running Processes
 To see what agent-related processes are currently active:
 
 ```bash
 ps aux | grep -E '(hermes|agent)' | grep -v grep
 ```
 
-### 4. Check for Brain System Components
+### 6. Check for Brain System Components
 To verify the brain/MCP system components:
 
 ```bash
@@ -98,6 +141,7 @@ cronjob create --name agent-status-display \
 
 ## Troubleshooting
 - If you see "Error getting agent status: No module named 'hermes_tools'": This indicates the hermes_tools module isn't available in the current Python environment, but the script still provides basic session information
+- If MCP brain tools fail with "ClosedResourceError": The brain MCP server may not be running or accessible in the current context. Use `hermes status` or direct SQLite queries to `~/.hermes/state.db` as fallbacks
 - If hermes command not found: Ensure Hermes agent is properly installed and the CLI is in your PATH
 - For detailed diagnostics: Run 'hermes doctor'
 - To reconfigure: Run 'hermes setup'

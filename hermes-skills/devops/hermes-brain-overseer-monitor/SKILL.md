@@ -124,6 +124,50 @@ Key jobs to verify:
 - Consider restarting the hermes agent or MCP services
 - Look for resource constraints (CPU, memory, disk space)
 
+**Node module version mismatch (ERR_DLOPEN_FAILED):**
+This is a common issue when multiple Node.js versions are installed (e.g., NVM + Homebrew). The `better-sqlite3` native module must be compiled for the exact Node version used by hermes.
+
+Symptoms:
+```
+Error: The module '.../better-sqlite3/build/Release/better_sqlite3.node'
+was compiled against a different Node.js version using
+NODE_MODULE_VERSION 137. This version of Node.js requires
+NODE_MODULE_VERSION 127.
+```
+
+Diagnosis:
+```bash
+# Check which Node version hermes uses
+~/.local/bin/hermes mcp test brain 2>&1 | head -5
+
+# Check available Node versions
+ls ~/.nvm/versions/node/ 2>/dev/null
+/opt/homebrew/bin/node -v
+
+# The error message shows both versions:
+# - NODE_MODULE_VERSION 137 = Node v24.x
+# - NODE_MODULE_VERSION 127 = Node v22.x
+```
+
+Fix:
+```bash
+# Find the Node version hermes uses (look at the path in the error)
+# Then rebuild native modules with THAT version in PATH:
+export PATH="/Users/devgwardo/.nvm/versions/node/v22.22.1/bin:$PATH"
+cd ~/brain-mcp
+npm rebuild better-sqlite3
+
+# Verify fix:
+~/.local/bin/hermes mcp test brain
+# Should show: ✓ Connected (2xxx ms)
+```
+
+Why this happens:
+- `better-sqlite3` is a native module compiled for a specific Node ABI
+- Running `npm install` under one Node version compiles for that version
+- If hermes uses a different Node (via NVM), the module won't load
+- Homebrew Node and NVM Node are often different versions
+
 **Stale files (no updates for >5 minutes):**
 - Overseer log stale: cron job not executing — check cron daemon and job configuration
 - Heartbeat log stale but overseer fresh: heartbeat script may be hanging — check if `brain_heartbeat.sh` is running

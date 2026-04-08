@@ -243,9 +243,31 @@ fi
 python3 ~/.hermes/hermes-agent/show_agents.py
 ```
 
+### 6. From Non-Hermes Contexts: Spawn Hermes Subagent
+When running in a context that doesn't have MCP tools (opencode-go, cron, external sessions), use `delegate_task` to spawn a hermes-agent subagent that DOES have brain MCP access:
+
+```python
+# Spawn hermes-agent subagent with MCP toolset
+delegate_task(
+    goal="Query brain MCP status and report findings",
+    context="Use mcp_brain_brain_status and mcp_brain_brain_agents to check brain health",
+    acp_command="hermes",
+    acp_args=["--acp", "--stdio"],
+    toolsets=["terminal", "file", "mcp"]
+)
+```
+
+**Why this works:**
+- hermes-agent registers MCP tools at startup via native MCP client
+- `acp_command="hermes"` spawns a hermes-agent process with full tool access
+- `toolsets=["mcp"]` ensures MCP tools are available to the subagent
+
+**Tool naming gotcha:** The brain MCP server exposes tools as `status`, `agents`, etc. (short names). Hermes registers them with `mcp_brain_` prefix, so `status` becomes `mcp_brain_brain_status` (double prefix — once for `mcp_` server prefix, once for `brain_` namespace). The skill uses `mcp_brain_brain_status` and `mcp_brain_brain_agents` as the canonical names.
+
 ## Notes
-- **Priority Order**: Direct MCP tools > Script-based check > Server diagnostics
+- **Priority Order**: Direct MCP tools > Script-based check > Server diagnostics > Spawn subagent
 - **Cron Job Context**: Expect script-based fallback to show \"checking MCP access...\" which indicates successful execution in approval-required environments
+- **Non-Hermes Context**: Use `delegate_task` with `acp_command="hermes"` to get MCP tool access
 - **Healthy System Indicators**: 
   - Direct tools: Brain server connected with available tools
   - Script fallback: Script executes successfully (exit code 0)  

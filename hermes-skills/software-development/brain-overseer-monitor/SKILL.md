@@ -118,3 +118,9 @@ Successful overseer execution produces log entries like:
 - Always correlate overseer findings with direct MCP tool checks when available for complete health picture
 - This skill complements the brain-heartbeat-check skill by adding time-series monitoring capability
 - **Caveat: HEARTBEAT_FRESH can be misleading.** The overseer checks if the heartbeat log file was *written to* recently, not whether the MCP connection succeeded. If the heartbeat script runs but its probe fails (e.g. native module crash), the overseer will report HEARTBEAT_FRESH while every heartbeat attempt is actually HEARTBEAT_FAIL. Always cross-check: `tail ~/.hermes/brain_heartbeat.log` for recent OK/FAIL entries, and `cat ~/.hermes/brain_heartbeat.status` for the actual status.
+- **Caveat: MCP tool ClosedResourceError ≠ heartbeat failure.** The heartbeat script probes MCP via its own subprocess mechanism. A running cron job or agent session may have a stale in-process MCP client connection that returns `ClosedResourceError` on all brain tool calls, even while the heartbeat script (separate process) reports OK. If brain MCP tools fail from your session but the heartbeat shows OK, the MCP server is likely fine — your session's connection is stale. This is not actionable from within the session; it just means the report must rely on overseer logs rather than live MCP tool calls.
+- **Hourly failure distribution** is a useful pattern for spotting outage windows:
+  ```bash
+  grep "YYYY-MM-DD.*HEARTBEAT_FAIL" ~/.hermes/brain_heartbeat.log | sed 's/\[YYYY-MM-DD \([0-9]\{2\}\).*/\1:00/' | sort | uniq -c | sort -rn
+  ```
+  Run the same for HEARTBEAT_OK to see the ratio per hour. Hours with high fail counts and low OK counts indicate sustained outages; hours with zero fails indicate stable windows.
