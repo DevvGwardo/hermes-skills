@@ -275,9 +275,54 @@ If the cron job isn't delivering output:
 - Ensure the script is executable
 - Check Hermes logs for cron execution errors
 
+## CLI: Direct SQLite DB Query (Most Reliable)
+
+The Python approach above depends on MCP tool imports which can fail. The most reliable way to list brain agents from CLI is querying the SQLite DB directly.
+
+### DB Location
+
+`~/.claude/brain/brain.db` (default path set in `brain-mcp/dist/db.js` constructor)
+
+### Quick one-liner
+
+```bash
+sqlite3 ~/.claude/brain/brain.db \
+  "SELECT name, status, pid, CAST((julianday('now') - julianday(last_heartbeat)) * 86400 AS INTEGER) as age_sec FROM sessions WHERE last_heartbeat > datetime('now', '-5 minutes') ORDER BY last_heartbeat DESC"
+```
+
+### Key Tables
+
+| Table | Contents |
+|-------|----------|
+| sessions | Agent sessions — name, status, pid, room, heartbeat, created_at |
+| messages | Channel messages — channel, room, sender, content |
+| claims | Resource claims — resource, owner_id, expires_at |
+| state | Shared KV store — key, value, scope |
+| context_ledger | Action/discovery/error log entries |
+| task_graph | Workflow DAG tasks and dependencies |
+
+### Shell script
+
+A proper CLI script exists at `~/.hermes/show_brain_agents.sh` that queries the DB and renders a formatted table. Run with:
+
+```bash
+bash ~/.hermes/show_brain_agents.sh
+```
+
+### Known Issue: Spawn Ghost Sessions
+
+Agents spawned via `brain_swarm` may register in the DB (status: queued) but never actually execute. Symptoms:
+- Status stuck at `queued` with progress "swarm queued; depends_on=undefined"
+- Heartbeat age grows without ever transitioning to `working`
+- Eventually goes stale (>90s without real heartbeat)
+- No messages posted, no state set, no claims made
+
+This is the "90% ghost session issue" from brain-mcp issue #4. The spawn creates a DB session but the subprocess never starts executing MCP tool calls. When it does work, agents transition: queued → working → done.
+
 ## Notes
 
-- The brain MCP server must be running and connected for this to work
+- The brain MCP server must be running and connected for MCP tool approach
+- Direct SQLite query works regardless of MCP server state (reads the DB file)
 - Agent status updates in near real-time (based on heartbeat intervals)
 - The script is designed to be lightweight and safe to run frequently
 - Consider adjusting the cron frequency based on your monitoring needs
