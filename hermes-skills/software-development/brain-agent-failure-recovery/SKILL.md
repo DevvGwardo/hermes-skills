@@ -37,6 +37,50 @@ Common causes:
 - Workspace copy/symlink issues (isolation mode)
 - Missing env vars in spawned process
 
+### Dual-session ghost bug (BRAIN_SESSION_ID not propagated)
+
+Root cause: brain-mcp is a **user-scope stdio MCP server** (`claude mcp get brain` shows `Environment: <empty>`). When `claude -p` launches a spawned agent, the shell gets `BRAIN_SESSION_ID=UUID-A` via `env` prefix, but Claude Code connects to brain-mcp as a stdio child WITHOUT passing that env var. Result:
+
+```
+brain_swarm → creates placeholder (UUID-A, name="swarm-worker-1", QUEUED)
+    ↓ spawns claude -p with env BRAIN_SESSION_ID=UUID-A
+Claude Code → brain-mcp server starts with sessionId = null
+    ↓ agent calls brain_register("swarm-worker-1")
+brain_register → sessionId is null → creates NEW session (UUID-B)
+    ↓
+Placeholder (UUID-A) stays QUEUED forever. UUID-B does the work.
+```
+
+**Symptom:** `brain_agents` shows named agents stuck in QUEUED while `session-XXXXX` agents (the real ones with random names) show DONE/WORKING. Two rows per agent — one ghost with the right name, one real with a random name.
+
+**Evidence to check:** `claude mcp get brain` should show `Environment:` with no vars set. Compare with what `brain_swarm` injects (`BRAIN_SESSION_ID`, `BRAIN_ROOM`, `BRAIN_SESSION_NAME`).
+
+**Fix approach (brain-mcp source):** In the `brain_register` handler in `src/index.ts` (~line 548), before creating a new session when `sessionId` is null, check if there's already a QUEUED session with the same name in the same room. If found, reuse it:
+
+```typescript
+// In src/index.ts brain_register handler (~line 548)
+async ({ name }) => {
+  sessionName = name;
+  if (sessionId) {
+    db.updateSessionName(sessionId, name);
+  } else {
+    // Check for existing placeholder with same name (swarm ghost fix)
+    const existing = db.findQueuedSessionByName(name, room);
+    if (existing) {
+      sessionId = existing.id;
+      db.updateSessionName(sessionId, name);
+    } else {
+      sessionId = db.registerSession(name, room);
+    }
+  }
+  return reply({ sessionId, name, room, roomLabel }, { ok: 1, name });
+}
+```
+
+This eliminates the dependency on `BRAIN_SESSION_ID` env var propagation entirely.
+
+**Fix approach (env propagation alt):** Write `BRAIN_SESSION_ID` to a file in the agent workspace and have brain-mcp read it on startup. Less clean — requires workspace awareness in the MCP server.
+
 ## Recovery Steps
 
 ### Step 1: Confirm failure (30s after spawn)

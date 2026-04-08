@@ -1,7 +1,7 @@
 ---
 name: brain-mcp-analysis
 description: Analyze and improve the brain-mcp codebase — current state, known issues, and refactoring approach.
-version: 1.0.0
+version: 2.0.0
 ---
 
 # Brain-MCP Analysis & Improvement
@@ -9,87 +9,87 @@ version: 1.0.0
 ## Repo Location
 `/Users/devgwardo/brain-mcp/` — TypeScript MCP server, `@devvgwardo/brain-mcp` v1.0.0.
 
-## Current Architecture State (as of 2026-04-07)
+## Current Architecture State (as of 2026-04-07, post-refactoring)
 
-### The Dead Module Problem
-`src/tools/` contains 6 "extracted" modules that are **NOT imported by index.ts**:
-- `tools/identity.ts` — register, sessions, status
-- `tools/messaging.ts` — post, read, dm, inbox
-- `tools/state.ts` — set, get, keys, delete
-- `tools/claims.ts` — claim, release, claims
-- `tools/swarm.ts` — swarm, wake, respawn
-- `tools/admin.ts` — clear, incr, counter, compact
+### Refactoring Complete: Modules Wired
+`src/index.ts` reduced from 3143 lines → 599 lines (~80% reduction). All 18 tool modules now imported and wired via `registerXxxTools(server, options)`:
 
-These files exist but index.ts still has all 55 tool registrations inline (3143 lines, 136KB). The extraction was started but never wired up — **dead code duplication**.
+| Module | Tools | Extra Options Needed |
+|--------|-------|---------------------|
+| context | context_push, context_get, context_summary, checkpoint, checkpoint_restore | base toolOptions |
+| memory | remember, recall, forget | base toolOptions |
+| plan | plan, plan_next, plan_update, plan_status | base toolOptions |
+| heartbeat | pulse, agents, respawn | compactMode, startLeadWatchdog, renderTool |
+| contracts | contract_set, contract_get, contract_check | base toolOptions |
+| gate | gate, auto_gate | base toolOptions |
+| admin | clear, incr, counter, compact | compactMode, setCompactMode |
+| metrics | brain_metrics, brain_metric_record, metrics, metric_record, compact | compactMode, setCompactMode, reply |
+| identity | register, sessions, status | sessionId, sessionName, setSessionId, setSessionName |
+| messaging | post, read, dm, inbox | sessionName |
+| state | set, get, keys, delete | base toolOptions |
+| claims | claim, release, claims | base toolOptions |
+| swarm | swarm, wake, respawn | sessionName, sessionId, minimalAgentPrompt, startLeadWatchdog |
+| router | route, wake | router (TaskRouter instance) |
+| git | commit, pr, clean_branches | base toolOptions |
+| security | security_scan | base toolOptions |
+| feature-dev | feature_dev | sessionName, startLeadWatchdog |
+| workflow | workflow_compile, workflow_apply, workflow_run | sessionName, startLeadWatchdog, minimalAgentPrompt |
 
-### Critical: How to Detect This Pattern
-When auditing a "partial refactoring" or "in-progress extraction":
-1. Don't just check if extracted files exist — that gives false confidence
-2. Grep for actual imports: `grep "import.*tools" src/index.ts`
-3. If nothing found, the extraction is incomplete regardless of how many files exist
-4. Run `node -e` with regex to enumerate all `server.tool('name')` registrations and compare against what's in the extracted files
+### Still Inline (2 tools)
+- `wait_until` — barrier primitive (no module extracted)
+- `barrier_reset` — barrier cleanup (no module extracted)
 
-### Remaining Extractions (11 groups still inline in index.ts)
-- heartbeat (pulse, agents)
-- barriers (wait_until, barrier_reset)
-- contracts (contract_set, contract_get, contract_check)
-- gate (gate, auto_gate)
-- context (context_push, context_get, context_summary, checkpoint, checkpoint_restore)
-- memory (remember, recall, forget)
-- plan (plan, plan_next, plan_update, plan_status)
-- workflow (workflow_compile, workflow_apply, workflow_run)
-- metrics (metrics, metric_record) — note: `brain_metrics` and `brain_metric_record` are separate aliases
-- router (route)
-- git (commit, pr, clean_branches)
-- security (security_scan)
-- feature (feature_dev)
+### Spawn Recovery Fix Applied
+`src/spawn-recovery.ts` line 476: changed `stdio: 'ignore'` → `stdio: ['ignore', 'pipe', 'pipe']` so spawned processes capture stdout/stderr for debugging.
 
-### Spawn Recovery Bug
-`src/spawn-recovery.ts` line 477 still uses `stdio: 'ignore'` — this means stderr/stdout from spawned agents are discarded. If an agent fails immediately (bad CLI, missing env, oversized prompt), the failure is silent. The retry logic exists but can't classify errors it never sees.
+## Key Lessons from Refactoring
 
-**Fix:** Change to `stdio: ['pipe', 'pipe', 'pipe']`, capture stderr in the startup check callback.
+### 1. Verify Actual State Before Planning
+The summary claimed 6 modules were "already wired" but they weren't — only 3 (context, memory, plan) had register calls. Always grep for `registerXxxTools(` to confirm, don't trust summaries.
 
-### Watchdog State
-`src/watchdog.ts` (397 lines) has active respawn logic, ghost detection, temp file cleanup. However, it runs as a separate detached process — check if it's actually running with `ps aux | grep watchdog | grep brain`. As of last check, only the main server process was running (PID 8402).
+### 2. Module Options Vary
+Not all modules take `toolOptions` alone. Some need:
+- `compactMode` / `setCompactMode` — admin, metrics
+- `sessionName` / `sessionId` — identity, messaging, swarm, feature-dev, workflow
+- `startLeadWatchdog` — heartbeat, swarm, feature-dev, workflow
+- `minimalAgentPrompt` — swarm, workflow
+- `reply` — metrics (for compact output)
+- `renderTool` — heartbeat
+- `router` (TaskRouter) — router-tools
 
-### Key Files
-- `src/index.ts` — 3143 lines, main server, all 55 tool registrations
-- `src/db.ts` — 66KB BrainDB (better-sqlite3 wrapper)
-- `src/spawn-recovery.ts` — 605 lines, retry/backoff/escalation
-- `src/watchdog.ts` — 397 lines, detached watchdog process
-- `src/gate.ts` — integration gate (tsc + contracts)
-- `src/workflow.ts` — workflow compiler
-- `src/conductor.ts` — workflow runtime conductor
-- `src/renderer.ts` — output rendering
+Check each module's exported interface: `grep -A20 "interface.*Options" src/tools/*.ts`
 
-### DB Location
-`~/.claude/brain/brain.db` (SQLite via better-sqlite3)
+### 3. Duplicate Tool Registration
+Both `admin.ts` and `metrics.ts` register `compact`. This is a conflict — only one should own it. Prefer admin.ts since it also has clear/incr/counter.
 
-### Build & Verify
+### 4. Brain Agent Spawns Fail Silently
+With `stdio: 'ignore'`, spawned agents that crash immediately produce no output. The 90% ghost session rate was caused by this. The fix enables stderr capture but the spawn-recovery logic also needs to read it.
+
+### 5. File Size Reduction Strategy
+- Extract tools to modules with `register{Name}Tools(server, options)` pattern
+- Each module owns its own schemas and handler logic
+- index.ts becomes orchestration only: imports, options, register calls, server start
+
+## Build & Verify
 ```bash
 cd /Users/devgwardo/brain-mcp
 npx tsc --noEmit   # type check
 npm run build      # compile to dist/
 ```
 
-## Improvement Plan
+## Remaining Work
+- Extract barriers module for `wait_until` and `barrier_reset`
+- Run `npx tsc --noEmit` to verify no compile errors
+- Smoke test: start server, confirm all 55 tools register
+- Remove duplicate `compact` registration (admin vs metrics)
 
-### Phase 1: Wire Up Existing Modules
-Import the 6 existing tools/ modules into index.ts, remove duplicate inline registrations. Verify `npx tsc --noEmit` passes.
+## Key Files
+- `src/index.ts` — 599 lines, orchestration only
+- `src/db.ts` — 66KB BrainDB (better-sqlite3 wrapper)
+- `src/spawn-recovery.ts` — 605 lines, retry/backoff/escalation (stdio fixed)
+- `src/watchdog.ts` — 397 lines, detached watchdog process
+- `src/gate.ts` — integration gate (tsc + contracts)
+- `src/tools/*.ts` — 18 extracted tool modules
 
-### Phase 2: Extract Remaining Modules
-Create and wire the remaining 11+ tool groups. Each module exports `register{Name}Tools(server, options)` per the convention in ARCHITECTURE.md.
-
-### Phase 3: Fix Spawn stdio
-Change `stdio: 'ignore'` to piped stdio in spawn-recovery.ts. Capture stderr for error classification.
-
-### Phase 4: Verify
-- `npx tsc --noEmit` passes
-- All 55 tools still registered (no regressions)
-- Spawn test with a known-bad command shows error in logs
-
-## Pitfalls
-- The extracted modules may have drifted from index.ts versions — diff before wiring
-- `brain_metrics`/`brain_metric_record` are separate tool names from `metrics`/`metric_record` — both exist as aliases
-- The `options` interface passed to register functions is defined in ARCHITECTURE.md and includes mutable refs (sessionId, sessionName)
-- `src/tools/swarm.ts` is 24KB — the largest extracted module, contains wake/respawn which depend on tmux and spawn-recovery
+## DB Location
+`~/.claude/brain/brain.db` (SQLite via better-sqlite3)

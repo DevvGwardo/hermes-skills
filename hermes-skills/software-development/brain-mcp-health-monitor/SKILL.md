@@ -143,6 +143,71 @@ If the system appears unhealthy:
 5. **Path issues**: Verify brain-mcp directory exists and is accessible
 6. **Heartbeat script exit 0 but no success log**: The script may be failing to match its success pattern due to transient output (e.g., cold start yielding incomplete data). Check the heartbeat log for pattern failures and verify system health directly with `hermes mcp test brain`. Understanding the script's grep pattern is key to diagnosing false negatives.
 
+## Integration Testing (Multi-Agent Primitives)
+
+Use this when you need to verify brain-mcp primitives work end-to-end, not just that the server is alive. This exercises the full stack: spawn, communicate, share state, checkpoint, gate.
+
+### Step 1: Basic Primitives
+```
+- brain_register (name yourself)
+- brain_set / brain_get (shared state round-trip)
+- brain_delete (cleanup)
+- brain_incr / brain_counter (atomic counters)
+- brain_contract_check (validates all contracts)
+- brain_post (channel messaging)
+- brain_plan (DAG task planning with dependencies)
+```
+
+### Step 2: Checkpoint Round-Trip
+```
+- brain_checkpoint (save current task state)
+- brain_checkpoint_restore (verify data survives)
+```
+
+### Step 3: Spawn a Test Agent
+```
+- brain_wake with a task that tells the agent to:
+  1. brain_register with a name
+  2. brain_set a verification key
+  3. brain_post a status message to channel
+  4. brain_pulse working → brain_pulse done
+  5. /exit
+- Use headless mode + 120s timeout
+```
+
+### Step 4: Multi-Agent Communication
+```
+- brain_agents (verify agent is alive and registered)
+- brain_dm to the spawned agent
+- brain_inbox (check DM delivery)
+- brain_read (verify agent's channel posts)
+- brain_get the key the agent was supposed to set
+```
+
+### Step 5: Gate Validation
+```
+- brain_gate with dry_run=true
+- Checks: tsc, contracts, behavioral tests, performance baselines
+- On a clean workspace, behavioral + performance should pass
+```
+
+### Step 6: Metrics
+```
+- brain_metric_record (record test outcome)
+- brain_brain_metrics (query history)
+```
+
+### Step 7: Cleanup
+```
+- Delete test keys from shared state
+- brain_context_push to log the test run
+```
+
+### Known Issues
+- **Ghost sessions**: Spawned agents may appear twice — once as QUEUED (stale) and once as IDLE (alive). This is the "90% ghost session" issue. Not a blocker but causes confusion in brain_agents output.
+- **list_prompts / list_resources**: Not implemented (MCP discovery endpoints). Non-critical.
+- **Gate tests**: If run from workspace root with multiple repos, vitest may pick up stray test files and report false failures. The tsc and contracts checks are more reliable indicators.
+
 ## Notes
 - The heartbeat script runs every minute via cron
 - The overseer script runs every 2 minutes via cron

@@ -15680,6 +15680,44 @@
         "mcp_status": "status_check_failed"
       },
       "timestamp": "2026-04-07T13:10:23.960169"
+    },
+    {
+      "timestamp": "2026-04-07T21:03:06.645248",
+      "collection_type": "scheduled",
+      "system_state": {
+        "brain_mcp_accessible": false,
+        "mcp_error": "ClosedResourceError",
+        "active_hours": true,
+        "hour": 21,
+        "is_boundary_hour": true
+      },
+      "actions_taken": [
+        {
+          "action": "mcp_brain_agents",
+          "result": "failed",
+          "error": "ClosedResourceError"
+        },
+        {
+          "action": "mcp_brain_metrics",
+          "result": "failed",
+          "error": "ClosedResourceError"
+        },
+        {
+          "action": "mcp_health_check",
+          "result": "failed"
+        }
+      ],
+      "reward": {
+        "data_collected": 0,
+        "mcp_health": 0.0,
+        "collection_success": false
+      },
+      "metadata": {
+        "collection_note": "Brain MCP unavailable - ClosedResourceError on all calls. End of active hours boundary.",
+        "existing_trajectory_count": 926,
+        "existing_file_count": 3
+      }
     }
-  ]
+  ],
+  "total_records": 476
 }
